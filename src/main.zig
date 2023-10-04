@@ -1,54 +1,62 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    var args = try std.process.argsAlloc(allocator);
+    const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
-    const args1 = args[1..];
 
-    if (args1.len > 1) {
-        std.debug.print("Usage: zloxi [script]\n", .{});
-        std.os.exit(64);
-    } else if (args1.len == 1) {
-        std.debug.print("file read\n", .{});
-        try runFile(args1[0]);
-    } else {
-        try runPrompt();
+    switch (args.len) {
+        1 => try runPrompt(allocator),
+        2 => {
+            try runFile(allocator, args[1]);
+            std.debug.print("File Read!\n", .{});
+        },
+        else => {
+            const stderr = std.io.getStdErr().writer();
+            try stderr.print("Usage: lox [path]\n", .{});
+            std.process.exit(64);
+        },
     }
 }
 
-fn runFile(path: []const u8) !void {
-    var file = try std.fs.cwd().openFile(path, .{});
-    defer file.close();
+fn runFile(allocator: Allocator, path: []const u8) !void {
+    var source = try std.fs.cwd().readFileAlloc(allocator, path, 1_000_000);
+    defer allocator.free(source);
 
-    var buf: [1024 * 4]u8 = undefined;
-    try file.seekTo(0);
-    _ = try file.read(&buf);
-
-    try run(buf[0..]);
+    try run(allocator, source);
 }
 
-fn runPrompt() !void {
+fn runPrompt(allocator: Allocator) !void {
     while (true) {
         std.debug.print("> ", .{});
         var line = try readInput();
         if (std.mem.eql(u8, line, "")) {
             break;
         }
-        try run(line);
+        try run(allocator, line);
     }
 }
 
-fn run(input: []u8) !void {
+fn run(allocator: Allocator, input: []u8) !void {
     _ = input;
+    _ = allocator;
     //const tokens = scanner.scanTokens();
 
     //for (tokens) |token| {
     //    std.debug.print("{s}\n", .{token});
     //}
+}
+
+fn _error(line: u32, message: []u8) void {
+    report(line, "", message);
+}
+
+fn report(line: u32, where: []u8, message: []u8) void {
+    std.debug.print("[line {d}] Error {s}: {s}\n", .{ line, where, message });
 }
 
 fn readInput() ![]u8 {
