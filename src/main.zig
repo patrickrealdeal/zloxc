@@ -50,13 +50,13 @@ fn runPrompt(allocator: Allocator) !void {
 }
 
 fn run(allocator: Allocator, source: []u8) !void {
-    _ = allocator;
     var scanner = Scanner.init(source);
     var token: Token = undefined;
     while (!scanner.isAtEnd()) {
-        scanner.start = scanner.current;
         token = scanner.scanToken();
-        std.debug.print("{}\n", .{token});
+        const stoken = try token.toString(allocator);
+        defer allocator.free(stoken);
+        std.debug.print("{s}\n", .{stoken});
     }
 }
 

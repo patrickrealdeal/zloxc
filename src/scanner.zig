@@ -1,6 +1,7 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 
-pub const TokenType = enum {
+pub const TokenType = enum(usize) {
     // Single character tokens
     LEFT_PAREN,
     RIGHT_PAREN,
@@ -56,19 +57,23 @@ pub const Token = struct {
     lexeme: []const u8,
     line: usize,
 
-    pub fn init(ttype: TokenType, lexeme: []u8, literal: []u8, line: usize) Token {
+    pub fn init(ttype: TokenType, lexeme: []u8, line: usize) Token {
         return Token{
             .ttype = ttype,
             .lexeme = lexeme,
-            .literal = literal,
             .line = line,
         };
     }
 
-    //pub fn toString() []u8 {
-    //    const res = comptime std.fmt.comptimePrint("{} {} {}", .{ .ttype, .lexeme, .literal });
-    //    return res;
-    //}
+    pub fn toString(self: *Token, allocator: Allocator) ![]const u8 {
+        const string = try std.fmt.allocPrint(
+            allocator,
+            "Token: {s:} -- lexeme: {s:} -- source line: {d:>}",
+            .{ @tagName(self.ttype), self.lexeme, self.line },
+        );
+
+        return string;
+    }
 };
 
 pub const Scanner = struct {
