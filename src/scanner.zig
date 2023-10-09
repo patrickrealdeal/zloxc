@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-pub const TokenType = enum(usize) {
+pub const TokenType = enum {
     // Single character tokens
     LEFT_PAREN,
     RIGHT_PAREN,
