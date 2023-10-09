@@ -1,5 +1,10 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const Scanner = @import("./scanner.zig").Scanner;
+const Token = @import("./scanner.zig").Token;
+const TokenType = @import("./scanner.zig").TokenType;
+
+var hadError: bool = false;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -28,6 +33,8 @@ fn runFile(allocator: Allocator, path: []const u8) !void {
     defer allocator.free(source);
 
     try run(allocator, source);
+
+    if (hadError) std.process.exit(65);
 }
 
 fn runPrompt(allocator: Allocator) !void {
@@ -38,17 +45,19 @@ fn runPrompt(allocator: Allocator) !void {
             break;
         }
         try run(allocator, line);
+        hadError = false;
     }
 }
 
-fn run(allocator: Allocator, input: []u8) !void {
-    _ = input;
+fn run(allocator: Allocator, source: []u8) !void {
     _ = allocator;
-    //const tokens = scanner.scanTokens();
-
-    //for (tokens) |token| {
-    //    std.debug.print("{s}\n", .{token});
-    //}
+    var scanner = Scanner.init(source);
+    var token: Token = undefined;
+    while (!scanner.isAtEnd()) {
+        scanner.start = scanner.current;
+        token = scanner.scanToken();
+        std.debug.print("{}\n", .{token});
+    }
 }
 
 fn _error(line: u32, message: []u8) void {
