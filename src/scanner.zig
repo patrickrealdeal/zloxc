@@ -57,7 +57,7 @@ pub const Token = struct {
     lexeme: []const u8,
     line: usize,
 
-    pub fn init(ttype: TokenType, lexeme: []u8, line: usize) Token {
+    pub fn init(ttype: TokenType, lexeme: []const u8, line: usize) Token {
         return Token{
             .ttype = ttype,
             .lexeme = lexeme,
@@ -82,7 +82,7 @@ pub const Scanner = struct {
     current: usize,
     line: usize,
 
-    pub fn init(source: []u8) Scanner {
+    pub fn init(source: []const u8) Scanner {
         return Scanner{ .source = source, .start = 0, .current = 0, .line = 1 };
     }
 
