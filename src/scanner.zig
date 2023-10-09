@@ -78,12 +78,11 @@ pub const Token = struct {
 
 pub const Scanner = struct {
     source: []const u8,
-    start: usize,
     current: usize,
     line: usize,
 
     pub fn init(source: []const u8) Scanner {
-        return Scanner{ .source = source, .start = 0, .current = 0, .line = 1 };
+        return Scanner{ .source = source, .current = 0, .line = 1 };
     }
 
     pub fn scanToken(self: *Scanner) Token {
