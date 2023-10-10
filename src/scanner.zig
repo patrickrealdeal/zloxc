@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-pub const TokenType = enum(usize) {
+pub const TokenType = enum {
     // Single character tokens
     LEFT_PAREN,
     RIGHT_PAREN,
@@ -78,12 +78,15 @@ pub const Token = struct {
 
 pub const Scanner = struct {
     source: []const u8,
-    start: usize,
     current: usize,
     line: usize,
 
     pub fn init(source: []const u8) Scanner {
+<<<<<<< HEAD
         return Scanner{ .source = source, .start = 0, .current = 0, .line = 1 };
+=======
+        return Scanner{ .source = source, .current = 0, .line = 1 };
+>>>>>>> refs/remotes/origin/main
     }
 
     pub fn scanToken(self: *Scanner) Token {
