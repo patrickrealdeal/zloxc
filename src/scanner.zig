@@ -82,11 +82,7 @@ pub const Scanner = struct {
     line: usize,
 
     pub fn init(source: []const u8) Scanner {
-<<<<<<< HEAD
-        return Scanner{ .source = source, .start = 0, .current = 0, .line = 1 };
-=======
         return Scanner{ .source = source, .current = 0, .line = 1 };
->>>>>>> refs/remotes/origin/main
     }
 
     pub fn scanToken(self: *Scanner) Token {
