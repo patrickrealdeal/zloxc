@@ -33,7 +33,7 @@ pub const Chunk = struct {
         }
     }
 
-    pub fn disassembleInstruction(self: *Chunk, offset: usize) usize {
+    fn disassembleInstruction(self: *Chunk, offset: usize) usize {
         std.debug.print("{:0>4} ", .{offset});
 
         const instruction: OpCode = @enumFromInt(self.code.items[offset]);
