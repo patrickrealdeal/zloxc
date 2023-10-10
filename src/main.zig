@@ -10,5 +10,6 @@ pub fn main() !void {
     var chunk = Chunk.init(allocator);
     defer chunk.deinit();
 
-    try chunk.write(@enumToInt(OpCode.OP_RETURN));
+    try chunk.write(@intFromEnum(OpCode.OP_RETURN));
+    try chunk.disassemble("test chunk");
 }

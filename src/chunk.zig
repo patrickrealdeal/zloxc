@@ -33,9 +33,18 @@ pub const Chunk = struct {
         }
     }
 
-    pub fn disassembleInstruction(self: *Chunk, offsent: uszie) usize {
-        std.debug.print("{:0>4}", offset);
+    pub fn disassembleInstruction(self: *Chunk, offset: usize) usize {
+        std.debug.print("{:0>4} ", .{offset});
 
-        instruction = self.code.items[offset];
+        const instruction: OpCode = @enumFromInt(self.code.items[offset]);
+        return switch (instruction) {
+            .OP_RETURN => self.simpleInstruction("OP_RETURN", offset),
+        };
+    }
+
+    fn simpleInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
+        _ = self;
+        std.debug.print("{s}\n", .{name});
+        return offset + 1;
     }
 };
