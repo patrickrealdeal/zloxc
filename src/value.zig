@@ -16,7 +16,7 @@ pub const Value = union(enum) {
         _ = fmt;
         _ = options;
         switch (self) {
-            .Number => |value| try out_stream.print("{d}\n", .{value}),
+            .Number => |value| try out_stream.print("'{d}'\n", .{value}),
         }
     }
 };

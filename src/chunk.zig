@@ -5,28 +5,36 @@ const Value = @import("./value.zig").Value;
 
 // 1 byte opcodes
 pub const OpCode = enum(u8) {
-    OP_CONSTANT,
+    OP_CONSTANT, // 2 bytes 1 for opcode 1 for operand (index)
     OP_RETURN, // return from current function
 };
 
 pub const Chunk = struct {
     code: ArrayList(u8),
     constants: ArrayList(Value),
+    lines: ArrayList(usize),
 
     pub fn init(allocator: Allocator) Chunk {
         return .{
             .code = ArrayList(u8).init(allocator),
             .constants = ArrayList(Value).init(allocator),
+            .lines = ArrayList(usize).init(allocator),
         };
     }
 
     pub fn deinit(self: *Chunk) void {
         self.code.deinit();
         self.constants.deinit();
+        self.lines.deinit();
     }
 
-    pub fn write(self: *Chunk, byte: u8) !void {
+    pub fn write(self: *Chunk, byte: u8, line: usize) !void {
         try self.code.append(byte);
+        try self.lines.append(line);
+    }
+
+    pub fn writeOp(self: *Chunk, op: OpCode, line: usize) !void {
+        try self.write(@intFromEnum(op), line);
     }
 
     /// returns the index of the appended constant to locate it later
@@ -47,6 +55,12 @@ pub const Chunk = struct {
 
     fn disassembleInstruction(self: *Chunk, offset: usize) usize {
         std.debug.print("{:0>4} ", .{offset});
+
+        if (offset > 0 and self.lines.items[offset] == self.lines.items[offset - 1]) {
+            std.debug.print("    | ", .{});
+        } else {
+            std.debug.print("{: >4} ", .{self.lines.items[offset]});
+        }
 
         const instruction: OpCode = @enumFromInt(self.code.items[offset]);
         return switch (instruction) {
