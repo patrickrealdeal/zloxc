@@ -58,9 +58,9 @@ pub const VM = struct {
     fn runOp(self: *VM, opCode: OpCode) !void {
         switch (opCode) {
             .OP_ADD => {
-                const rhs = self.pop();
-                const lhs = self.pop();
-                self.push(Value.fromNumber(lhs.asNumber() + rhs.asNumber()));
+                const rhs = self.pop().asNumber();
+                const lhs = self.pop().asNumber();
+                self.push(Value.fromNumber(lhs + rhs));
             },
             .OP_SUBTRACT => try self.binaryOp(sub),
             .OP_MULTIPLY => try self.binaryOp(mul),
@@ -91,9 +91,9 @@ pub const VM = struct {
     }
 
     fn binaryOp(self: *VM, comptime op: anytype) !void {
-        const rhs = self.pop();
-        const lhs = self.pop();
-        self.push(Value.fromNumber(op(lhs.asNumber(), rhs.asNumber())));
+        const rhs = self.pop().asNumber();
+        const lhs = self.pop().asNumber();
+        self.push(Value.fromNumber(op(lhs, rhs)));
     }
 
     pub fn push(self: *VM, value: Value) void {
