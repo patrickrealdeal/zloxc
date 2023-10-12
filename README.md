@@ -1,2 +1,2 @@
-# zloxi
-Lox interpreter implementation in Zig
+# zloxc
+Lox bytecode compiler implementation in Zig.
