@@ -2,6 +2,7 @@ const std = @import("std");
 const Chunk = @import("./chunk.zig").Chunk;
 const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
+const VM = @import("./vm.zig").VM;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -10,6 +11,9 @@ pub fn main() !void {
 
     var chunk = Chunk.init(allocator);
     defer chunk.deinit();
+
+    const vm = VM.init();
+    defer vm.deinit();
 
     const val = Value{ .Number = 1.2 };
     const val1 = Value{ .Number = 23 };
@@ -26,4 +30,5 @@ pub fn main() !void {
     try chunk.writeOp(OpCode.OP_RETURN, 127);
     try chunk.writeOp(OpCode.OP_RETURN, 128);
     try chunk.disassemble("test chunk");
+    try vm.interpret(chunk);
 }
