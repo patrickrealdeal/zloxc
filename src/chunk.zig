@@ -6,6 +6,11 @@ const Value = @import("./value.zig").Value;
 // 1 byte opcodes
 pub const OpCode = enum(u8) {
     OP_CONSTANT, // 2 bytes 1 for opcode 1 for operand (index)
+    OP_ADD,
+    OP_SUBTRACT,
+    OP_MULTIPLY,
+    OP_DIVIDE,
+    OP_NEGATE,
     OP_RETURN, // return from current function
 };
 
@@ -66,6 +71,11 @@ pub const Chunk = struct {
         return switch (instruction) {
             .OP_RETURN => self.simpleInstruction("OP_RETURN", offset),
             .OP_CONSTANT => self.constantInstruction("OP_CONSTANT", offset),
+            .OP_NEGATE => self.simpleInstruction("OP_NEGATE", offset),
+            .OP_ADD => self.simpleInstruction("OP_ADD", offset),
+            .OP_SUBTRACT => self.simpleInstruction("OP_SUBTRACT", offset),
+            .OP_MULTIPLY => self.simpleInstruction("OP_MULTIPLY", offset),
+            .OP_DIVIDE => self.simpleInstruction("OP_DIVIDE", offset),
         };
     }
 

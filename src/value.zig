@@ -12,11 +12,15 @@ pub const Value = union(enum) {
         return self.Number;
     }
 
+    pub fn fromNumber(n: f64) Value {
+        return Value{ .Number = n };
+    }
+
     pub fn format(self: Value, comptime fmt: []const u8, options: std.fmt.FormatOptions, out_stream: anytype) !void {
         _ = fmt;
         _ = options;
         switch (self) {
-            .Number => |value| try out_stream.print("'{d}'\n", .{value}),
+            .Number => |value| try out_stream.print("'{d}'", .{value}),
         }
     }
 };
