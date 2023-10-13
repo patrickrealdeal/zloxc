@@ -1,4 +1,7 @@
 const std = @import("std");
+const io = std.io;
+const Errors = @import("/.vm.zig").Errors;
+const Allocator = std.mem.Allocator;
 const Chunk = @import("./chunk.zig").Chunk;
 const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
@@ -9,34 +12,56 @@ pub fn main() !void {
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
 
-    var chunk = Chunk.init(allocator);
-    defer chunk.deinit();
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+
+    switch (args.len) {
+        1 => try repl(allocator),
+        2 => try runFile(allocator, args[1]),
+        else => {
+            const stderr = io.getStdErr().writer();
+            try stderr.print("Usage: zloxc [path]\n", .{});
+            std.process.exit(64);
+        },
+    }
+
+    // var chunk = Chunk.init(allocator);
+    // defer chunk.deinit();
+}
+
+fn repl(allocator: Allocator) !void {
+    const stderr = io.getStdErr().writer();
+    const stdin = io.getStdIn();
 
     var vm = VM.create();
     try vm.init(allocator);
     defer vm.deinit();
 
-    const val0 = Value{ .Number = 1.2 };
-    const constant0 = try chunk.addConstant(val0);
-    try chunk.writeOp(OpCode.OP_CONSTANT, 123);
-    try chunk.write(constant0, 123);
+    var buf: [256]u8 = undefined;
+    while (true) {
+        try stderr.print("> ", .{});
+        const input = try stdin.read(&buf);
+        if (input == buf.len) {
+            try stderr.print("Input too long.\n", .{});
+            continue;
+        }
+        const source = buf[0..input];
+        _ = source;
+        // vm.interpret(source);
+    }
+}
 
-    const val1 = Value{ .Number = 3.4 };
-    const constant1 = try chunk.addConstant(val1);
-    try chunk.writeOp(OpCode.OP_CONSTANT, 124);
-    try chunk.write(constant1, 124);
+fn runFile(allocator: Allocator, path: []const u8) !void {
+    var vm = VM.create();
+    try vm.init(allocator);
+    defer vm.deinit();
 
-    try chunk.writeOp(.OP_ADD, 123);
-
-    const val2 = Value{ .Number = 5.6 };
-    const constant2 = try chunk.addConstant(val2);
-    try chunk.writeOp(OpCode.OP_CONSTANT, 124);
-    try chunk.write(constant2, 123);
-
-    try chunk.writeOp(OpCode.OP_DIVIDE, 123);
-    try chunk.writeOp(OpCode.OP_NEGATE, 123);
-    try chunk.writeOp(OpCode.OP_RETURN, 123);
-    // try chunk.disassemble("test chunk");
-    const result = vm.interpret(chunk);
-    std.debug.print("Result: {s}\n", .{@tagName(result)});
+    const source = try std.fs.cwd().readFileAlloc(allocator, path, 1_000_000);
+    defer allocator.free(source);
+    const result = try vm.interpret(source);
+    switch (result) {
+        .INTERPRET_OK => return,
+        .INTERPRET_COMPILE_ERROR => std.process.exit(65),
+        .INTERPRET_RUNTIME_ERROR => std.process.exit(70),
+    }
 }

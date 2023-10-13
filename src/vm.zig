@@ -4,10 +4,11 @@ const Chunk = @import("./chunk.zig").Chunk;
 const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
 const Stack = @import("./stack.zig").Stack;
+const Compiler = @import("./compiler.zig");
 
 const STACK_MAX = 256;
 
-const InterpretResult = enum {
+pub const InterpretResult = enum {
     INTERPRET_OK,
     INTERPRET_COMPILE_ERROR,
     INTERPRET_RUNTIME_ERROR,
@@ -38,13 +39,16 @@ pub const VM = struct {
         self.stack.deinit();
     }
 
-    pub fn interpret(self: *VM, chunk: Chunk) InterpretResult {
-        self.chunk = chunk;
-        self.ip = 0;
-        return self.run();
+    pub fn interpret(self: *VM, source: []const u8) !InterpretResult {
+        // Assert the Stack is empty at beginning and end
+        std.debug.assert(self.stack.items.len == 0);
+        defer std.debug.assert(self.stack.items.len == 0);
+
+        return try Compiler.compile(self.allocator, source);
+        // self.run();
     }
 
-    fn run(self: *VM) InterpretResult {
+    fn run(self: *VM) !void {
         while (true) {
             const instruction = self.readByte();
             const opCode: OpCode = @enumFromInt(instruction);

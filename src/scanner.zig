@@ -68,8 +68,8 @@ pub const Token = struct {
     pub fn toString(self: *Token, allocator: Allocator) ![]const u8 {
         const string = try std.fmt.allocPrint(
             allocator,
-            "Token: {s:} -- lexeme: {s:} -- source line: {d:>}",
-            .{ @tagName(self.ttype), self.lexeme, self.line },
+            "{s:} {s:}",
+            .{ @tagName(self.ttype), self.lexeme },
         );
 
         return string;
@@ -80,9 +80,10 @@ pub const Scanner = struct {
     source: []const u8,
     current: usize,
     line: usize,
+    hadError: bool,
 
     pub fn init(source: []const u8) Scanner {
-        return Scanner{ .source = source, .current = 0, .line = 1 };
+        return Scanner{ .source = source, .current = 0, .line = 1, .hadError = false };
     }
 
     pub fn scanToken(self: *Scanner) Token {
