@@ -34,7 +34,7 @@ fn repl(allocator: Allocator) !void {
     const stdin = io.getStdIn();
 
     var vm = VM.create();
-    try vm.init(allocator);
+    try vm.init(allocator, std.io.getStdOut().writer(), std.io.getStdErr().writer());
     defer vm.deinit();
 
     var buf: [256]u8 = undefined;
@@ -53,7 +53,7 @@ fn repl(allocator: Allocator) !void {
 
 fn runFile(allocator: Allocator, path: []const u8) !void {
     var vm = VM.create();
-    try vm.init(allocator);
+    try vm.init(allocator, std.io.getStdOut().writer(), std.io.getStdErr().writer());
     defer vm.deinit();
 
     const source = try std.fs.cwd().readFileAlloc(allocator, path, 1_000_000);

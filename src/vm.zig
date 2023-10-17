@@ -5,6 +5,7 @@ const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
 const Stack = @import("./stack.zig").Stack;
 const Compiler = @import("./compiler.zig");
+const VMWriter = @import("./writer.zig").VMWriter;
 
 const STACK_MAX = 256;
 
@@ -19,6 +20,8 @@ pub const VM = struct {
     ip: usize, // instruction pointe
     stack: Stack(Value),
     allocator: Allocator,
+    outWriter: VMWriter,
+    errWriter: VMWriter,
 
     pub fn create() VM {
         return VM{
@@ -26,13 +29,17 @@ pub const VM = struct {
             .ip = undefined,
             .stack = undefined,
             .allocator = undefined,
+            .outWriter = undefined,
+            .errWriter = undefined,
         };
     }
 
-    pub fn init(self: *VM, allocator: Allocator) !void {
+    pub fn init(self: *VM, allocator: Allocator, outWriter: VMWriter, errWriter: VMWriter) !void {
         self.allocator = allocator;
         self.ip = 0;
         self.stack = try Stack(Value).init(allocator, STACK_MAX);
+        self.outWriter = outWriter;
+        self.errWriter = errWriter;
     }
 
     pub fn deinit(self: *VM) void {
@@ -44,11 +51,23 @@ pub const VM = struct {
         std.debug.assert(self.stack.items.len == 0);
         defer std.debug.assert(self.stack.items.len == 0);
 
-        return try Compiler.compile(self.allocator, source);
-        // self.run();
+        var chunk = Chunk.init(self.allocator);
+        defer chunk.deinit();
+
+        if (!try Compiler.compile(self, source, &chunk)) {
+            chunk.deinit();
+            return .INTERPRET_COMPILE_ERROR;
+        }
+
+        self.chunk = chunk;
+        self.ip = 0;
+
+        const result = self.run();
+
+        return result;
     }
 
-    fn run(self: *VM) !void {
+    fn run(self: *VM) !InterpretResult {
         while (true) {
             const instruction = self.readByte();
             const opCode: OpCode = @enumFromInt(instruction);
