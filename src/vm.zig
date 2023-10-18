@@ -5,7 +5,6 @@ const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
 const Stack = @import("./stack.zig").Stack;
 const Compiler = @import("./compiler.zig");
-const VMWriter = @import("./writer.zig").VMWriter;
 
 const STACK_MAX = 256;
 
@@ -20,8 +19,6 @@ pub const VM = struct {
     ip: usize, // instruction pointe
     stack: Stack(Value),
     allocator: Allocator,
-    outWriter: VMWriter,
-    errWriter: VMWriter,
 
     pub fn create() VM {
         return VM{
@@ -29,49 +26,40 @@ pub const VM = struct {
             .ip = undefined,
             .stack = undefined,
             .allocator = undefined,
-            .outWriter = undefined,
-            .errWriter = undefined,
         };
     }
 
-    pub fn init(self: *VM, allocator: Allocator, outWriter: VMWriter, errWriter: VMWriter) !void {
+    pub fn init(self: *VM, allocator: Allocator) !void {
         self.allocator = allocator;
         self.ip = 0;
         self.stack = try Stack(Value).init(allocator, STACK_MAX);
-        self.outWriter = outWriter;
-        self.errWriter = errWriter;
+        self.chunk = Chunk.init(allocator);
     }
 
     pub fn deinit(self: *VM) void {
         self.stack.deinit();
+        self.chunk.deinit();
     }
 
-    pub fn interpret(self: *VM, source: []const u8) !InterpretResult {
+    pub fn interpret(self: *VM, source: []const u8) InterpretResult {
         // Assert the Stack is empty at beginning and end
         std.debug.assert(self.stack.items.len == 0);
         defer std.debug.assert(self.stack.items.len == 0);
 
-        var chunk = Chunk.init(self.allocator);
-        defer chunk.deinit();
-
-        if (!try Compiler.compile(self, source, &chunk)) {
-            chunk.deinit();
+        if (!Compiler.compile(self, source, &self.chunk)) {
+            self.chunk.deinit();
             return .INTERPRET_COMPILE_ERROR;
         }
 
-        self.chunk = chunk;
-        self.ip = 0;
-
         const result = self.run();
-
         return result;
     }
 
-    fn run(self: *VM) !InterpretResult {
+    fn run(self: *VM) InterpretResult {
         while (true) {
             const instruction = self.readByte();
             const opCode: OpCode = @enumFromInt(instruction);
-            try self.runOp(opCode);
+            self.runOp(opCode) catch unreachable;
             if (opCode == .OP_RETURN and self.stack.items.len == 0) break;
         }
 
@@ -99,8 +87,9 @@ pub const VM = struct {
                 self.push(value);
             },
             .OP_RETURN => {
-                try self.printStack();
+                // self.printStack();
                 const result = self.pop();
+                std.debug.print("RESULT: {d}\n", .{result.asNumber()});
                 if (self.stack.items.len == 0) return;
                 self.push(result);
             },
@@ -127,7 +116,8 @@ pub const VM = struct {
         return self.stack.pop();
     }
 
-    pub fn printStack(self: *VM) !void {
+    pub fn printStack(self: *VM) void {
+        std.debug.print("--- STACK ---\n", .{});
         std.debug.print("          ", .{});
         for (self.stack.items) |item| {
             std.debug.print("[ {} ]", .{item});

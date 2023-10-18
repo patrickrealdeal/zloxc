@@ -35,5 +35,10 @@ pub fn Stack(comptime T: type) type {
             self.items = self.buffer[0 .. self.items.len - 1];
             return val;
         }
+
+        pub fn resize(self: *Self, new_len: usize) !void {
+            std.debug.assert(new_len <= self.buffer.len);
+            self.items = self.buffer[0..new_len];
+        }
     };
 }

@@ -6,6 +6,7 @@ const Chunk = @import("./chunk.zig").Chunk;
 const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
 const VM = @import("./vm.zig").VM;
+const debug = @import("./debug.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -18,6 +19,10 @@ pub fn main() !void {
     switch (args.len) {
         1 => try repl(allocator),
         2 => try runFile(allocator, args[1]),
+        3 => {
+            debug.trace_parser = true;
+            try runFile(allocator, args[1]);
+        },
         else => {
             const stderr = io.getStdErr().writer();
             try stderr.print("Usage: zloxc [path]\n", .{});
@@ -34,7 +39,7 @@ fn repl(allocator: Allocator) !void {
     const stdin = io.getStdIn();
 
     var vm = VM.create();
-    try vm.init(allocator, std.io.getStdOut().writer(), std.io.getStdErr().writer());
+    try vm.init(allocator);
     defer vm.deinit();
 
     var buf: [256]u8 = undefined;
@@ -46,19 +51,20 @@ fn repl(allocator: Allocator) !void {
             continue;
         }
         const source = buf[0..input];
-        _ = source;
-        // vm.interpret(source);
+        if (vm.interpret(source) == .INTERPRET_OK) {
+            continue;
+        }
     }
 }
 
 fn runFile(allocator: Allocator, path: []const u8) !void {
     var vm = VM.create();
-    try vm.init(allocator, std.io.getStdOut().writer(), std.io.getStdErr().writer());
+    try vm.init(allocator);
     defer vm.deinit();
 
     const source = try std.fs.cwd().readFileAlloc(allocator, path, 1_000_000);
     defer allocator.free(source);
-    const result = try vm.interpret(source);
+    const result = vm.interpret(source);
     switch (result) {
         .INTERPRET_OK => return,
         .INTERPRET_COMPILE_ERROR => std.process.exit(65),
