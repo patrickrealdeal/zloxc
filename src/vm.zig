@@ -14,6 +14,8 @@ pub const InterpretResult = enum {
     INTERPRET_RUNTIME_ERROR,
 };
 
+pub const RuntimeError = error{RuntimeError};
+
 pub const VM = struct {
     chunk: Chunk,
     ip: usize, // instruction pointe
@@ -60,7 +62,7 @@ pub const VM = struct {
             const instruction = self.readByte();
             const opCode: OpCode = @enumFromInt(instruction);
             self.runOp(opCode) catch unreachable;
-            if (opCode == .OP_RETURN and self.stack.items.len == 0) break;
+            if (opCode == .RETURN and self.stack.items.len == 0) break;
         }
 
         return .INTERPRET_OK;
@@ -68,44 +70,103 @@ pub const VM = struct {
 
     fn runOp(self: *VM, opCode: OpCode) !void {
         switch (opCode) {
-            .OP_ADD => {
-                const rhs = self.pop().asNumber();
-                const lhs = self.pop().asNumber();
-                self.push(Value.fromNumber(lhs + rhs));
+            .ADD, .SUBTRACT, .MULTIPLY, .DIVIDE => |op| try self.runBinaryOp(op),
+            .NEGATE => {
+                if (!self.peek(0).isNumber()) {
+                    return self.runtimeError("Operand must be a number.", .{});
+                }
+                const val = self.pop().asNumber();
+                self.push(Value.fromNumber(-val));
             },
-            .OP_SUBTRACT => try self.binaryOp(sub),
-            .OP_MULTIPLY => try self.binaryOp(mul),
-            .OP_DIVIDE => try self.binaryOp(div),
-            .OP_NEGATE => {
-                const val = self.pop();
-                // if (!val.isNumber()) return .INTERPRET_RUNTIME_ERROR;
-                self.push(Value.fromNumber(-val.asNumber()));
-            },
-            .OP_CONSTANT => {
+            .CONSTANT => {
                 const constant = self.readByte();
                 const value = self.chunk.constants.items[constant];
                 self.push(value);
             },
-            .OP_RETURN => {
-                // self.printStack();
+            .NIL => self.push(Value.nil()),
+            .TRUE => self.push(Value.fromBool(true)),
+            .FALSE => self.push(Value.fromBool(false)),
+            .NOT => {
+                const value = Value.fromBool(self.pop().isFalsey());
+                self.push(value);
+            },
+            .EQUAL => {
+                const b = self.pop();
+                const a = self.pop();
+                self.push(Value.fromBool(a.equals(b)));
+            },
+            .GREATER, .LESS => |o| try self.runBinaryComparison(o),
+            .RETURN => {
                 const result = self.pop();
-                std.debug.print("RESULT: {d}\n", .{result.asNumber()});
+                std.debug.print("RESULT: {any}\n", .{result});
                 if (self.stack.items.len == 0) return;
                 self.push(result);
             },
         }
     }
 
+    fn peek(self: *VM, distance: usize) Value {
+        return self.stack.items[self.stack.items.len - 1 - distance];
+    }
+
+    fn runtimeError(self: *VM, comptime format: []const u8, args: anytype) RuntimeError {
+        std.debug.print(format, args);
+        std.debug.print("\n", .{});
+
+        var i = self.stack.items.len - 1;
+        const line = self.chunk.lines.items[i];
+        std.debug.print("[line {d}] in script.\n", .{line});
+        self.resetStack();
+
+        return error.RuntimeError;
+    }
+
+    fn runBinaryOp(self: *VM, op: OpCode) !void {
+        if (!self.peek(1).isNumber() or !self.peek(0).isNumber()) {
+            return self.runtimeError("Operands must be numbers", .{});
+        }
+
+        const rhs = self.pop().asNumber();
+        const lhs = self.pop().asNumber();
+
+        const number = switch (op) {
+            .ADD => lhs + rhs,
+            .SUBTRACT => lhs - rhs,
+            .MULTIPLY => lhs * rhs,
+            .DIVIDE => lhs / rhs,
+            else => unreachable,
+        };
+
+        self.push(Value.fromNumber(number));
+    }
+
+    fn runBinaryComparison(self: *VM, op: OpCode) !void {
+        if (!self.peek(1).isNumber() or !self.peek(0).isNumber()) {
+            return self.runtimeError("Operands must be numbers", .{});
+        }
+
+        const rhs = self.pop().asNumber();
+        const lhs = self.pop().asNumber();
+
+        const result = switch (op) {
+            .LESS => lhs < rhs,
+            //.LESS_EQUAL => lhs <= rhs,
+            .GREATER => lhs > rhs,
+            // .GREATER_EQUAL => lhs >= rhs,
+            else => unreachable,
+        };
+
+        self.push(Value.fromBool(result));
+    }
+
+    fn resetStack(self: *VM) void {
+        self.stack.resize(0) catch unreachable;
+    }
+
     fn readByte(self: *VM) u8 {
         const byte = self.chunk.code.items[self.ip];
         self.ip += 1;
         return byte;
-    }
-
-    fn binaryOp(self: *VM, comptime op: anytype) !void {
-        const rhs = self.pop().asNumber();
-        const lhs = self.pop().asNumber();
-        self.push(Value.fromNumber(op(lhs, rhs)));
     }
 
     pub fn push(self: *VM, value: Value) void {
@@ -125,15 +186,3 @@ pub const VM = struct {
         std.debug.print("\n", .{});
     }
 };
-
-fn sub(x: f64, y: f64) f64 {
-    return x - y;
-}
-
-fn mul(x: f64, y: f64) f64 {
-    return x * y;
-}
-
-fn div(x: f64, y: f64) f64 {
-    return x / y;
-}

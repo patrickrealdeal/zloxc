@@ -146,7 +146,7 @@ pub const Scanner = struct {
             'w' => self.checkKeyword(1, "hile", .WHILE),
             'f' => {
                 return switch (self.source[1]) {
-                    'a' => self.checkKeyword(2, "alse", .FALSE),
+                    'a' => self.checkKeyword(2, "lse", .FALSE),
                     'o' => self.checkKeyword(2, "r", .FOR),
                     'u' => self.checkKeyword(2, "un", .FUN),
                     else => .IDENTIFIER,

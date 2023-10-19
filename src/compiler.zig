@@ -152,7 +152,7 @@ const Parser = struct {
     }
 
     fn emitReturn(self: *Parser) void {
-        self.emitOp(.OP_RETURN);
+        self.emitOp(.RETURN);
     }
 
     fn emitUnaryOp(self: *Parser, op: OpCode, byte: u8) void {
@@ -161,7 +161,7 @@ const Parser = struct {
     }
 
     fn emitConstant(self: *Parser, value: Value) void {
-        self.emitUnaryOp(.OP_CONSTANT, self.makeConstant(value));
+        self.emitUnaryOp(.CONSTANT, self.makeConstant(value));
     }
 
     fn match(self: *Parser, ttype: TokenType) bool {
@@ -201,14 +201,19 @@ const Parser = struct {
 
         while (@intFromEnum(precedence) <= @intFromEnum(getRule(self.current.ttype).precedence)) {
             self.advance();
-            const infixRule = getRule(self.previous.ttype).infix.?;
+            const infixRule = getRule(self.previous.ttype).infix;
             if (debug.trace_parser) {
                 std.debug.print("P | {s}: {s}\n", .{
                     @tagName(self.previous.ttype),
                     @tagName(precedence),
                 });
             }
-            infixRule(self);
+
+            if (infixRule == null) {
+                self.err("Expected expression");
+                return;
+            }
+            infixRule.?(self);
         }
     }
 
@@ -232,7 +237,8 @@ const Parser = struct {
 
         // Emit Op instructions
         switch (opType) {
-            .MINUS => self.emitOp(.OP_NEGATE),
+            .MINUS => self.emitOp(.NEGATE),
+            .BANG => self.emitOp(.NOT),
             else => return,
         }
     }
@@ -244,11 +250,35 @@ const Parser = struct {
         self.parsePrecedence(rule.precedence.next());
 
         switch (opType) {
-            .PLUS => self.emitOp(.OP_ADD),
-            .MINUS => self.emitOp(.OP_SUBTRACT),
-            .STAR => self.emitOp(.OP_MULTIPLY),
-            .SLASH => self.emitOp(.OP_DIVIDE),
+            .PLUS => self.emitOp(.ADD),
+            .MINUS => self.emitOp(.SUBTRACT),
+            .STAR => self.emitOp(.MULTIPLY),
+            .SLASH => self.emitOp(.DIVIDE),
+            .BANG_EQUAL => {
+                self.emitOp(.EQUAL);
+                self.emitOp(.NOT);
+            },
+            .EQUAL_EQUAL => self.emitOp(.EQUAL),
+            .GREATER => self.emitOp(.GREATER),
+            .GREATER_EQUAL => {
+                self.emitOp(.LESS);
+                self.emitOp(.NOT);
+            },
+            .LESS => self.emitOp(.LESS),
+            .LESS_EQUAL => {
+                self.emitOp(.GREATER);
+                self.emitOp(.NOT);
+            },
             else => self.err("Unexpected binary operator"),
+        }
+    }
+
+    fn literal(self: *Parser) void {
+        switch (self.previous.ttype) {
+            .NIL => self.emitOp(.NIL),
+            .FALSE => self.emitOp(.FALSE),
+            .TRUE => self.emitOp(.TRUE),
+            else => unreachable,
         }
     }
 };
@@ -282,31 +312,31 @@ fn getRule(ttype: TokenType) ParseRule {
         .SEMICOLON => makeRule(null, null, Precedence.None),
         .SLASH => makeRule(null, Parser.binary, Precedence.Factor),
         .STAR => makeRule(null, Parser.binary, Precedence.Factor),
-        .BANG => makeRule(null, null, Precedence.None),
-        .BANG_EQUAL => makeRule(null, null, Precedence.None),
+        .BANG => makeRule(Parser.unary, null, Precedence.None),
+        .BANG_EQUAL => makeRule(null, Parser.binary, Precedence.None),
         .EQUAL => makeRule(null, null, Precedence.None),
-        .EQUAL_EQUAL => makeRule(null, null, Precedence.None),
-        .GREATER => makeRule(null, null, Precedence.None),
-        .GREATER_EQUAL => makeRule(null, null, Precedence.None),
-        .LESS => makeRule(null, null, Precedence.None),
-        .LESS_EQUAL => makeRule(null, null, Precedence.None),
+        .EQUAL_EQUAL => makeRule(null, Parser.binary, Precedence.Equality),
+        .GREATER => makeRule(null, Parser.binary, Precedence.Comparison),
+        .GREATER_EQUAL => makeRule(null, Parser.binary, Precedence.Comparison),
+        .LESS => makeRule(null, Parser.binary, Precedence.Comparison),
+        .LESS_EQUAL => makeRule(null, Parser.binary, Precedence.Comparison),
         .IDENTIFIER => makeRule(null, null, Precedence.None),
         .STRING => makeRule(null, null, Precedence.None),
         .NUMBER => makeRule(Parser.number, null, Precedence.None),
         .AND => makeRule(null, null, Precedence.None),
         .CLASS => makeRule(null, null, Precedence.None),
         .ELSE => makeRule(null, null, Precedence.None),
-        .FALSE => makeRule(null, null, Precedence.None),
+        .FALSE => makeRule(Parser.literal, null, Precedence.None),
         .FOR => makeRule(null, null, Precedence.None),
         .FUN => makeRule(null, null, Precedence.None),
         .IF => makeRule(null, null, Precedence.None),
-        .NIL => makeRule(null, null, Precedence.None),
+        .NIL => makeRule(Parser.literal, null, Precedence.None),
         .OR => makeRule(null, null, Precedence.None),
         .PRINT => makeRule(null, null, Precedence.None),
         .RETURN => makeRule(null, null, Precedence.None),
         .SUPER => makeRule(null, null, Precedence.None),
         .THIS => makeRule(null, null, Precedence.None),
-        .TRUE => makeRule(null, null, Precedence.None),
+        .TRUE => makeRule(Parser.literal, null, Precedence.None),
         .VAR => makeRule(null, null, Precedence.None),
         .WHILE => makeRule(null, null, Precedence.None),
         .ERROR => makeRule(null, null, Precedence.None),

@@ -5,13 +5,20 @@ const Value = @import("./value.zig").Value;
 
 // 1 byte opcodes
 pub const OpCode = enum(u8) {
-    OP_CONSTANT, // 2 bytes 1 for opcode 1 for operand (index)
-    OP_ADD,
-    OP_SUBTRACT,
-    OP_MULTIPLY,
-    OP_DIVIDE,
-    OP_NEGATE,
-    OP_RETURN, // return from current function
+    CONSTANT, // 2 bytes 1 for opcode 1 for operand (index)
+    NIL,
+    TRUE,
+    FALSE,
+    EQUAL,
+    GREATER,
+    LESS,
+    ADD,
+    SUBTRACT,
+    MULTIPLY,
+    DIVIDE,
+    NOT,
+    NEGATE,
+    RETURN, // return from current function
 };
 
 pub const Chunk = struct {
@@ -69,13 +76,20 @@ pub const Chunk = struct {
 
         const instruction: OpCode = @enumFromInt(self.code.items[offset]);
         return switch (instruction) {
-            .OP_RETURN => self.simpleInstruction("OP_RETURN", offset),
-            .OP_CONSTANT => self.constantInstruction("OP_CONSTANT", offset),
-            .OP_NEGATE => self.simpleInstruction("OP_NEGATE", offset),
-            .OP_ADD => self.simpleInstruction("OP_ADD", offset),
-            .OP_SUBTRACT => self.simpleInstruction("OP_SUBTRACT", offset),
-            .OP_MULTIPLY => self.simpleInstruction("OP_MULTIPLY", offset),
-            .OP_DIVIDE => self.simpleInstruction("OP_DIVIDE", offset),
+            .RETURN => self.simpleInstruction("RETURN", offset),
+            .CONSTANT => self.constantInstruction("CONSTANT", offset),
+            .NEGATE => self.simpleInstruction("NEGATE", offset),
+            .ADD => self.simpleInstruction("ADD", offset),
+            .SUBTRACT => self.simpleInstruction("SUBTRACT", offset),
+            .MULTIPLY => self.simpleInstruction("MULTIPLY", offset),
+            .DIVIDE => self.simpleInstruction("DIVIDE", offset),
+            .TRUE => self.simpleInstruction("TRUE", offset),
+            .FALSE => self.simpleInstruction("FALSE", offset),
+            .NIL => self.simpleInstruction("NIL", offset),
+            .NOT => self.simpleInstruction("NOT", offset),
+            .GREATER => self.simpleInstruction("GREATER", offset),
+            .EQUAL => self.simpleInstruction("EQUAL", offset),
+            .LESS => self.simpleInstruction("LESS", offset),
         };
     }
 
