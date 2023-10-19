@@ -46,11 +46,9 @@ pub const Value = union(ValueType) {
     }
 
     pub fn equals(self: Value, other: Value) bool {
-        // if (self != other) return false;
-
         switch (self) {
-            .Number => return self.asNumber() == other.asNumber(),
-            .Bool => return self.asBool() == other.asBool(),
+            .Number => return if (other.isNumber()) self.asNumber() == other.asNumber() else false,
+            .Bool => return if (other.isBool()) self.asBool() == other.asBool() else false,
             .Nil => return true,
         }
 
