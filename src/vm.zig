@@ -5,6 +5,7 @@ const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
 const Stack = @import("./stack.zig").Stack;
 const Compiler = @import("./compiler.zig");
+const Obj = @import("./object.zig").Obj;
 
 const STACK_MAX = 256;
 
@@ -157,6 +158,23 @@ pub const VM = struct {
         };
 
         self.push(Value.fromBool(result));
+    }
+
+    pub fn concatenate(self: *VM) !void {
+        const a = self.peek(1).asObjType(.String);
+        const b = self.peek(0).asObjType(.String);
+
+        const length = a.bytes.len + b.bytes.len;
+        var bytes = try self.allocator.alloc(u8, length);
+        std.mem.copy(u8, bytes[0..a.bytes.len], a.bytes);
+        std.mem.copy(u8, bytes[a.bytes.len..], b.bytes);
+
+        const result = try Obj.String.take(self, bytes);
+
+        _ = self.pop();
+        _ = self.pop();
+
+        self.push(result.obj.value());
     }
 
     fn resetStack(self: *VM) void {

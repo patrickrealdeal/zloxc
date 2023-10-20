@@ -9,6 +9,7 @@ const Chunk = @import("./chunk.zig").Chunk;
 const OpCode = @import("./chunk.zig").OpCode;
 const Value = @import("./value.zig").Value;
 const debug = @import("./debug.zig");
+const Obj = @import("./object.zig").Obj;
 
 pub fn compile(vm: *VM, source: []const u8, chunk: *Chunk) bool {
     var parser = try Parser.init(vm, chunk, source);
@@ -82,6 +83,7 @@ const Parser = struct {
         return self.chunk;
     }
 
+    /// Asks the Scanner for next Token and stores it for later use
     fn advance(self: *Parser) void {
         self.previous = self.current;
 
@@ -108,9 +110,10 @@ const Parser = struct {
         }
     }
 
+    /// Validates that Token has the expected type
     fn consume(self: *Parser, ttype: TokenType, message: []const u8) void {
         if (self.current.ttype == ttype) {
-            _ = self.advance();
+            self.advance();
             return;
         }
 
@@ -182,6 +185,7 @@ const Parser = struct {
         return constant;
     }
 
+    /// Starts at the current token and parses any expression at the given precedence level or higher
     fn parsePrecedence(self: *Parser, precedence: Precedence) void {
         self.advance();
 
@@ -281,6 +285,12 @@ const Parser = struct {
             else => unreachable,
         }
     }
+
+    fn string(self: *Parser) void {
+        const lexeme = self.previous.lexeme;
+        const str = Obj.String.copy(self.vm, lexeme[0..]) catch unreachable;
+        self.emitConstant(str.obj.value());
+    }
 };
 
 const ParseRule = struct {
@@ -313,7 +323,7 @@ fn getRule(ttype: TokenType) ParseRule {
         .SLASH => makeRule(null, Parser.binary, Precedence.Factor),
         .STAR => makeRule(null, Parser.binary, Precedence.Factor),
         .BANG => makeRule(Parser.unary, null, Precedence.None),
-        .BANG_EQUAL => makeRule(null, Parser.binary, Precedence.None),
+        .BANG_EQUAL => makeRule(null, Parser.binary, Precedence.Equality),
         .EQUAL => makeRule(null, null, Precedence.None),
         .EQUAL_EQUAL => makeRule(null, Parser.binary, Precedence.Equality),
         .GREATER => makeRule(null, Parser.binary, Precedence.Comparison),
@@ -321,7 +331,7 @@ fn getRule(ttype: TokenType) ParseRule {
         .LESS => makeRule(null, Parser.binary, Precedence.Comparison),
         .LESS_EQUAL => makeRule(null, Parser.binary, Precedence.Comparison),
         .IDENTIFIER => makeRule(null, null, Precedence.None),
-        .STRING => makeRule(null, null, Precedence.None),
+        .STRING => makeRule(Parser.string, null, Precedence.None),
         .NUMBER => makeRule(Parser.number, null, Precedence.None),
         .AND => makeRule(null, null, Precedence.None),
         .CLASS => makeRule(null, null, Precedence.None),
