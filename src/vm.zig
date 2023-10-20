@@ -22,6 +22,7 @@ pub const VM = struct {
     ip: usize, // instruction pointe
     stack: Stack(Value),
     allocator: Allocator,
+    objects: ?*Obj,
 
     pub fn create() VM {
         return VM{
@@ -29,6 +30,7 @@ pub const VM = struct {
             .ip = undefined,
             .stack = undefined,
             .allocator = undefined,
+            .objects = null,
         };
     }
 
@@ -42,6 +44,7 @@ pub const VM = struct {
     pub fn deinit(self: *VM) void {
         self.stack.deinit();
         self.chunk.deinit();
+        self.freeObjects();
     }
 
     pub fn interpret(self: *VM, source: []const u8) InterpretResult {
@@ -110,6 +113,15 @@ pub const VM = struct {
         return self.stack.items[self.stack.items.len - 1 - distance];
     }
 
+    pub fn freeObjects(self: *VM) void {
+        var object = self.objects;
+        while (object) |o| {
+            const next = o.next;
+            o.destory(self);
+            object = next;
+        }
+    }
+
     fn runtimeError(self: *VM, comptime format: []const u8, args: anytype) RuntimeError {
         std.debug.print(format, args);
         std.debug.print("\n", .{});
@@ -169,7 +181,8 @@ pub const VM = struct {
         std.mem.copy(u8, bytes[0..a.bytes.len], a.bytes);
         std.mem.copy(u8, bytes[a.bytes.len..], b.bytes);
 
-        const result = try Obj.String.take(self, bytes);
+        const result = try Obj.String.copy(self, bytes);
+        defer self.allocator.free(bytes);
 
         _ = self.pop();
         _ = self.pop();

@@ -4,6 +4,7 @@ const Value = @import("./value.zig").Value;
 
 pub const Obj = struct {
     objType: Type,
+    next: ?*Obj,
 
     pub const Type = enum(u8) {
         String,
@@ -15,6 +16,8 @@ pub const Obj = struct {
         ptr.obj = Obj{
             .objType = objType,
         };
+
+        vm.objects = &ptr.obj;
 
         return &ptr.obj;
     }
