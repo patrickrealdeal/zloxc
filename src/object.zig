@@ -15,8 +15,10 @@ pub const Obj = struct {
 
         ptr.obj = Obj{
             .objType = objType,
+            .next = vm.objects,
         };
 
+        // every time we allocate an Obj we insert it in the list
         vm.objects = &ptr.obj;
 
         return &ptr.obj;
@@ -70,10 +72,8 @@ pub const Obj = struct {
         obj: Obj,
         bytes: []const u8,
 
+        /// Does not take ownership of the the bytes we pass int
         pub fn copy(vm: *VM, bytes: []const u8) !*String {
-            //const interned = vm.strings.get(bytes);
-            // if (interned) |s| return s;
-
             const heapChars = try vm.allocator.alloc(u8, bytes.len);
             std.mem.copy(u8, heapChars, bytes);
             return allocate(vm, heapChars);
@@ -88,6 +88,7 @@ pub const Obj = struct {
             return string;
         }
 
+        /// Takes ownership of bytes
         pub fn take(vm: *VM, bytes: []const u8) !*String {
             return allocate(vm, bytes);
         }

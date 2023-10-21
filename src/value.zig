@@ -75,7 +75,12 @@ pub const Value = union(ValueType) {
             .Bool => return if (other.isBool()) self.asBool() == other.asBool() else false,
             .Nil => return true,
             .Obj => |x| switch (other) {
-                .Obj => |y| x == y,
+                .Obj => |y| {
+                    const a = x.asObjType(.String);
+                    const b = y.asObjType(.String);
+                    return a.bytes.len == b.bytes.len and
+                        std.mem.eql(u8, a.bytes, b.bytes);
+                },
                 else => false,
             },
         };
@@ -100,7 +105,7 @@ pub const Value = union(ValueType) {
                 try out_stream.print("'{s}'", .{value});
             },
             .Nil => |_| try out_stream.print("'nil'", .{}),
-            .Obj => |o| try out_stream.print("'{s}'", .{o.toString()}),
+            .Obj => |o| try out_stream.print("\"{s}\"", .{o.toString()}),
         }
     }
 };

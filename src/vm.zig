@@ -22,7 +22,7 @@ pub const VM = struct {
     ip: usize, // instruction pointe
     stack: Stack(Value),
     allocator: Allocator,
-    objects: ?*Obj,
+    objects: ?*Obj, // tracks heap allocated Objs
 
     pub fn create() VM {
         return VM{
@@ -102,7 +102,7 @@ pub const VM = struct {
             .GREATER, .LESS => |o| try self.runBinaryComparison(o),
             .RETURN => {
                 const result = self.pop();
-                std.debug.print("RESULT: {any}\n", .{result});
+                std.debug.print("RESULT: {s}\n", .{result});
                 if (self.stack.items.len == 0) return;
                 self.push(result);
             },
@@ -117,7 +117,7 @@ pub const VM = struct {
         var object = self.objects;
         while (object) |o| {
             const next = o.next;
-            o.destory(self);
+            o.destroy(self);
             object = next;
         }
     }
@@ -133,26 +133,26 @@ pub const VM = struct {
 
         return error.RuntimeError;
     }
-
     fn runBinaryOp(self: *VM, op: OpCode) !void {
-        if (!self.peek(1).isNumber() or !self.peek(0).isNumber()) {
+        if (self.peek(1).isObjType(.String) or self.peek(0).isObjType(.String)) {
+            try self.concatenate();
+        } else if (self.peek(1).isNumber() and self.peek(0).isNumber()) {
+            const rhs = self.pop().asNumber();
+            const lhs = self.pop().asNumber();
+
+            const number = switch (op) {
+                .ADD => lhs + rhs,
+                .SUBTRACT => lhs - rhs,
+                .MULTIPLY => lhs * rhs,
+                .DIVIDE => lhs / rhs,
+                else => unreachable,
+            };
+
+            self.push(Value.fromNumber(number));
+        } else {
             return self.runtimeError("Operands must be numbers", .{});
         }
-
-        const rhs = self.pop().asNumber();
-        const lhs = self.pop().asNumber();
-
-        const number = switch (op) {
-            .ADD => lhs + rhs,
-            .SUBTRACT => lhs - rhs,
-            .MULTIPLY => lhs * rhs,
-            .DIVIDE => lhs / rhs,
-            else => unreachable,
-        };
-
-        self.push(Value.fromNumber(number));
     }
-
     fn runBinaryComparison(self: *VM, op: OpCode) !void {
         if (!self.peek(1).isNumber() or !self.peek(0).isNumber()) {
             return self.runtimeError("Operands must be numbers", .{});
@@ -178,11 +178,11 @@ pub const VM = struct {
 
         const length = a.bytes.len + b.bytes.len;
         var bytes = try self.allocator.alloc(u8, length);
+
         std.mem.copy(u8, bytes[0..a.bytes.len], a.bytes);
         std.mem.copy(u8, bytes[a.bytes.len..], b.bytes);
 
-        const result = try Obj.String.copy(self, bytes);
-        defer self.allocator.free(bytes);
+        const result = try Obj.String.take(self, bytes);
 
         _ = self.pop();
         _ = self.pop();

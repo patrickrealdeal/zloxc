@@ -288,7 +288,8 @@ const Parser = struct {
 
     fn string(self: *Parser) void {
         const lexeme = self.previous.lexeme;
-        const str = Obj.String.copy(self.vm, lexeme[0..]) catch unreachable;
+        const lexLen = lexeme.len;
+        const str = Obj.String.copy(self.vm, lexeme[1 .. lexLen - 1]) catch unreachable;
         self.emitConstant(str.obj.value());
     }
 };
