@@ -19,7 +19,7 @@ pub const RuntimeError = error{RuntimeError};
 
 pub const VM = struct {
     chunk: Chunk,
-    ip: usize, // instruction pointe
+    ip: usize, // instruction pointer
     stack: Stack(Value),
     allocator: Allocator,
     objects: ?*Obj, // tracks heap allocated Objs
