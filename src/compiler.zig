@@ -130,7 +130,7 @@ const Parser = struct {
 
     fn errorAt(self: *Parser, token: *Token, message: []const u8) void {
         if (self.panicMode) return;
-        self.hadError = true;
+        self.panicMode = true;
 
         std.debug.print("[line {}] Error", .{token.line});
 

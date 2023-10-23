@@ -6,6 +6,7 @@ const Value = @import("./value.zig").Value;
 const Stack = @import("./stack.zig").Stack;
 const Compiler = @import("./compiler.zig");
 const Obj = @import("./object.zig").Obj;
+const Table = @import("./table.zig").Table;
 
 const STACK_MAX = 256;
 
@@ -23,6 +24,7 @@ pub const VM = struct {
     stack: Stack(Value),
     allocator: Allocator,
     objects: ?*Obj, // tracks heap allocated Objs
+    strings: Table,
 
     pub fn create() VM {
         return VM{
@@ -31,6 +33,7 @@ pub const VM = struct {
             .stack = undefined,
             .allocator = undefined,
             .objects = null,
+            .strings = undefined,
         };
     }
 
@@ -39,11 +42,13 @@ pub const VM = struct {
         self.ip = 0;
         self.stack = try Stack(Value).init(allocator, STACK_MAX);
         self.chunk = Chunk.init(allocator);
+        self.strings = Table.init(allocator);
     }
 
     pub fn deinit(self: *VM) void {
         self.stack.deinit();
         self.chunk.deinit();
+        self.strings.deinit();
         self.freeObjects();
     }
 
@@ -126,7 +131,7 @@ pub const VM = struct {
         std.debug.print(format, args);
         std.debug.print("\n", .{});
 
-        var i = self.stack.items.len - 1;
+        var i = self.stack.items.len;
         const line = self.chunk.lines.items[i];
         std.debug.print("[line {d}] in script.\n", .{line});
         self.resetStack();

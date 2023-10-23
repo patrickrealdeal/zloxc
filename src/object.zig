@@ -1,6 +1,7 @@
 const std = @import("std");
 const VM = @import("./vm.zig").VM;
 const Value = @import("./value.zig").Value;
+const Table = @import("./table.zig").Table;
 
 pub const Obj = struct {
     objType: Type,
@@ -71,6 +72,7 @@ pub const Obj = struct {
     pub const String = struct {
         obj: Obj,
         bytes: []const u8,
+        hash: usize,
 
         /// Does not take ownership of the the bytes we pass int
         pub fn copy(vm: *VM, bytes: []const u8) !*String {
@@ -80,12 +82,28 @@ pub const Obj = struct {
         }
 
         fn allocate(vm: *VM, bytes: []const u8) !*String {
+            const hash = hashFn(bytes);
+
+            if (vm.strings.findString(bytes, hash)) |interned| {
+                vm.allocator.free(bytes);
+                return interned;
+            }
+
             var obj = try Obj.create(vm, String, .String);
             const string = obj.asString();
             string.bytes = bytes;
+            string.hash = hash;
+
+            // Add string to HashTable
+            _ = try vm.strings.set(string, Value.fromBool(true));
 
             // Here we will push the string on the stack
             return string;
+        }
+
+        pub fn destroy(self: *String, vm: *VM) void {
+            vm.allocator.free(self.bytes);
+            vm.allocator.destroy(self);
         }
 
         /// Takes ownership of bytes
@@ -93,9 +111,19 @@ pub const Obj = struct {
             return allocate(vm, bytes);
         }
 
-        pub fn destroy(self: *String, vm: *VM) void {
-            vm.allocator.free(self.bytes);
-            vm.allocator.destroy(self);
+        // This is the FNV-1a has function
+        // Zig has an implementation already in std.hash.fnv
+        pub fn hashFn(bytes: []const u8) u32 {
+            var hash: u32 = 2166136261;
+
+            for (bytes) |byte| {
+                hash ^= byte;
+
+                // zig special operator to wrap around on overflow - neat
+                hash *%= 16777619;
+            }
+
+            return hash;
         }
     };
 };

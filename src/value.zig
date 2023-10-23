@@ -74,13 +74,8 @@ pub const Value = union(ValueType) {
             .Number => return if (other.isNumber()) self.asNumber() == other.asNumber() else false,
             .Bool => return if (other.isBool()) self.asBool() == other.asBool() else false,
             .Nil => return true,
-            .Obj => |x| switch (other) {
-                .Obj => |y| {
-                    const a = x.asObjType(.String);
-                    const b = y.asObjType(.String);
-                    return a.bytes.len == b.bytes.len and
-                        std.mem.eql(u8, a.bytes, b.bytes);
-                },
+            .Obj => |x| return switch (other) {
+                .Obj => |y| x == y,
                 else => false,
             },
         };

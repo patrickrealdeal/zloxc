@@ -51,8 +51,11 @@ fn repl(allocator: Allocator) !void {
             continue;
         }
         const source = buf[0..input];
-        if (vm.interpret(source) == .INTERPRET_OK) {
-            continue;
+        const result = vm.interpret(source);
+        switch (result) {
+            .INTERPRET_OK => continue,
+            .INTERPRET_COMPILE_ERROR => std.process.exit(65),
+            .INTERPRET_RUNTIME_ERROR => std.process.exit(70),
         }
     }
 }
