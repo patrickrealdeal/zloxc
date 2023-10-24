@@ -69,7 +69,7 @@ pub const VM = struct {
     fn run(self: *VM) InterpretResult {
         while (true) {
             const instruction = self.readByte();
-            const opCode: OpCode = @enumFromInt(instruction);
+            const opCode: OpCode = @intToEnum(OpCode, instruction);
             self.runOp(opCode) catch unreachable;
             if (opCode == .RETURN and self.stack.items.len == 0) break;
         }
@@ -105,11 +105,15 @@ pub const VM = struct {
                 self.push(Value.fromBool(a.equals(b)));
             },
             .GREATER, .LESS => |o| try self.runBinaryComparison(o),
+            .PRINT => {
+                const stdout = std.io.getStdOut().writer();
+                try stdout.print("{any}\n", .{self.pop()});
+            },
             .RETURN => {
-                const result = self.pop();
-                std.debug.print("RESULT: {s}\n", .{result});
-                if (self.stack.items.len == 0) return;
-                self.push(result);
+                //const result = self.pop();
+                //std.debug.print("RESULT: {s}\n", .{result});
+                //if (self.stack.items.len == 0) return;
+                //self.push(result);
             },
         }
     }

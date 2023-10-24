@@ -18,6 +18,7 @@ pub const OpCode = enum(u8) {
     DIVIDE,
     NOT,
     NEGATE,
+    PRINT,
     RETURN, // return from current function
 };
 
@@ -90,6 +91,7 @@ pub const Chunk = struct {
             .GREATER => self.simpleInstruction("GREATER", offset),
             .EQUAL => self.simpleInstruction("EQUAL", offset),
             .LESS => self.simpleInstruction("LESS", offset),
+            .PRINT => self.simpleInstruction("PRINT", offset),
         };
     }
 

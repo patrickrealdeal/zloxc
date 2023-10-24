@@ -14,11 +14,12 @@ const Obj = @import("./object.zig").Obj;
 pub fn compile(vm: *VM, source: []const u8, chunk: *Chunk) bool {
     var parser = try Parser.init(vm, chunk, source);
     parser.advance();
-    parser.expression();
-    parser.consume(.EOF, "Expect end of expression");
-
     if (parser.hadError) {
         return false;
+    }
+
+    while (!parser.match(.EOF)) {
+        parser.declaration();
     }
 
     parser.endCompiler();
@@ -103,6 +104,22 @@ const Parser = struct {
         self.parsePrecedence(.Assignment);
     }
 
+    fn declaration(self: *Parser) void {
+         self.statement();
+    }
+
+    fn statement(self: *Parser) void {
+        if (self.match(.PRINT)) {
+            self.printStatement();
+        }
+    }
+
+    fn printStatement(self: *Parser) void {
+        self.expression();
+        self.consume(.SEMICOLON, "Expect ';' after value.");
+        self.emitOp(.PRINT);
+    }
+    
     fn endCompiler(self: *Parser) void {
         self.emitReturn();
         if (!self.hadError and debug.trace_parser) {
