@@ -178,6 +178,7 @@ pub const VM = struct {
 
     fn runBinaryOp(self: *VM, op: OpCode) !void {
         if (self.peek(1).isObjType(.String) or self.peek(0).isObjType(.String)) {
+            // TODO: Disallow other operators for string concat.
             try self.concatenate();
         } else if (self.peek(1).isNumber() and self.peek(0).isNumber()) {
             const rhs = self.pop().asNumber();
@@ -207,9 +208,7 @@ pub const VM = struct {
 
         const result = switch (op) {
             .LESS => lhs < rhs,
-            //.LESS_EQUAL => lhs <= rhs,
             .GREATER => lhs > rhs,
-            // .GREATER_EQUAL => lhs >= rhs,
             else => unreachable,
         };
 

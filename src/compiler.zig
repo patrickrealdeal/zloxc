@@ -169,6 +169,8 @@ const Parser = struct {
         return self.makeConstant(string_obj.obj.value());
     }
 
+    // We skip tokens indiscriminately until we reach something 
+    // that looks like a statement boundary
     fn synchronize(self: *Parser) void {
         self.panicMode = false;
 
