@@ -141,7 +141,7 @@ const Parser = struct {
 
     // Initializes 'var a;' as 'var a = nil'.
     fn varDeclaration(self: *Parser) void {
-        const global = self.parseVariable("Expect varable name.") catch unreachable;
+        const global = self.parseVariable("Expect variable name.") catch unreachable;
 
         if (self.match(.EQUAL)) {
             self.expression();
