@@ -74,7 +74,9 @@ pub const VM = struct {
         while (true) {
             const instruction = self.readByte();
             const opCode: OpCode = @enumFromInt(instruction);
-            self.runOp(opCode) catch unreachable;
+            self.runOp(opCode) catch |err| {
+                if (err == error.RuntimeError) return .INTERPRET_RUNTIME_ERROR;
+            };
             if (opCode == .RETURN and self.stack.items.len == 0) break;
         }
 
@@ -118,6 +120,10 @@ pub const VM = struct {
                 const name = self.readString();
                 const value = self.peek(0);
                 _ = try self.globals.set(name, value);
+                // NOTE: that we don’t pop the value until after we add it to the hash table.
+                // That ensures the VM can still find the value if a garbage collection is
+                // triggered right in the middle of adding it to the hash table.
+                // That’s a distinct possibility since the hash table requires dynamic allocation when it resizes.
                 _ = self.pop();
             },
             .GET_GLOBAL => {

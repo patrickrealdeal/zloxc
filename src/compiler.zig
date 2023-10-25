@@ -372,7 +372,7 @@ const Parser = struct {
     fn string(self: *Parser, _: bool) void {
         const lexeme = self.previous.lexeme;
         const lexLen = lexeme.len;
-        const str = Obj.String.copy(self.vm, lexeme[1 .. lexLen - 1]) catch unreachable;
+        const str = Obj.String.copy(self.vm, lexeme[1 .. lexLen - 1]) catch unreachable; // Trim ""
         self.emitConstant(str.obj.value());
     }
 
