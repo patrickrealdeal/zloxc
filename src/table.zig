@@ -69,13 +69,13 @@ pub const Table = struct {
         if (self.entries.len == 0) return false;
 
         // Find entry
-        const entry = findEntry(self.entrie, key);
+        const entry = findEntry(self.entries, key);
         if (entry.key == null) return false;
 
         // Place a Tombstone in the entry to keep the collisin chain intact
         // as a null key with a true value
         entry.key = null;
-        entry.value = Value.asBool(true);
+        entry.value = Value.fromBool(true);
         return true;
     }
 

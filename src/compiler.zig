@@ -14,6 +14,7 @@ const Obj = @import("./object.zig").Obj;
 pub fn compile(vm: *VM, source: []const u8, chunk: *Chunk) bool {
     var parser = try Parser.init(vm, chunk, source);
     parser.advance();
+
     if (parser.hadError) {
         return false;
     }
@@ -100,18 +101,36 @@ const Parser = struct {
         return self.current.ttype == ttype;
     }
 
+    // Expressions and Statements
     fn expression(self: *Parser) void {
         self.parsePrecedence(.Assignment);
     }
 
     fn declaration(self: *Parser) void {
-         self.statement();
+        if (self.match(.VAR)) {
+            self.varDeclaration();
+        } else {
+            self.statement();
+        }
+
+        if (self.panicMode) {
+            self.synchronize();
+        }
     }
 
     fn statement(self: *Parser) void {
         if (self.match(.PRINT)) {
             self.printStatement();
+        } else {
+            self.expressionStatement();
         }
+    }
+
+    // Semantically, an expression statement evaluates the expression and discards the result.
+    fn expressionStatement(self: *Parser) void {
+        self.expression();
+        self.consume(.SEMICOLON, "Expect ';' after expression.");
+        self.emitOp(.POP);
     }
 
     fn printStatement(self: *Parser) void {
@@ -119,7 +138,49 @@ const Parser = struct {
         self.consume(.SEMICOLON, "Expect ';' after value.");
         self.emitOp(.PRINT);
     }
-    
+
+    // Initializes 'var a;' as 'var a = nil'.
+    fn varDeclaration(self: *Parser) void {
+        const global = self.parseVariable("Expect varable name.") catch unreachable;
+
+        if (self.match(.EQUAL)) {
+            self.expression();
+        } else {
+            self.emitOp(.NIL);
+        }
+
+        self.consume(.SEMICOLON, "Expect ';' after variable declaration.");
+
+        self.defineVariable(global);
+    }
+
+    fn parseVariable(self: *Parser, message: []const u8) !u8 {
+        self.consume(.IDENTIFIER, message);
+        return self.identifierConstant(&self.previous);
+    }
+
+    fn defineVariable(self: *Parser, global: u8) void {
+        self.emitUnaryOp(.DEFINE_GLOBAL, global);
+    }
+
+    // Takes the given token and adds its lexeme to the chunk’s constant table as a string.
+    fn identifierConstant(self: *Parser, name: *Token) !u8 {
+        const string_obj = try Obj.String.copy(self.vm, name.lexeme);
+        return self.makeConstant(string_obj.obj.value());
+    }
+
+    fn synchronize(self: *Parser) void {
+        self.panicMode = false;
+
+        while (self.current.ttype != .EOF) {
+            if (self.previous.ttype == .SEMICOLON) return;
+            switch (self.current.ttype) {
+                .CLASS, .FUN, .VAR, .FOR, .IF, .WHILE, .PRINT, .RETURN => return,
+                else => self.advance(),
+            }
+        }
+    }
+
     fn endCompiler(self: *Parser) void {
         self.emitReturn();
         if (!self.hadError and debug.trace_parser) {
@@ -218,7 +279,8 @@ const Parser = struct {
             return;
         }
 
-        prefixRule.?(self);
+        const canAssign = @intFromEnum(precedence) <= @intFromEnum(Precedence.Assignment);
+        prefixRule.?(self, canAssign);
 
         while (@intFromEnum(precedence) <= @intFromEnum(getRule(self.current.ttype).precedence)) {
             self.advance();
@@ -234,23 +296,27 @@ const Parser = struct {
                 self.err("Expected expression");
                 return;
             }
-            infixRule.?(self);
+            infixRule.?(self, canAssign);
+        }
+
+        if (canAssign and self.match(.EQUAL)) {
+            self.err("Invalid assignment target.");
         }
     }
 
     // EXPRESSIONS
     /// converts token to f64 then generates code to load the value
-    fn number(self: *Parser) void {
+    fn number(self: *Parser, _: bool) void {
         const value = std.fmt.parseFloat(f64, self.previous.lexeme) catch unreachable;
         self.emitConstant(Value.fromNumber(value));
     }
 
-    fn grouping(self: *Parser) void {
+    fn grouping(self: *Parser, _: bool) void {
         self.expression();
         self.consume(TokenType.RIGHT_PAREN, "Expect ')' after expression.");
     }
 
-    fn unary(self: *Parser) void {
+    fn unary(self: *Parser, _: bool) void {
         const opType = self.previous.ttype;
 
         // Compile the operand
@@ -264,7 +330,7 @@ const Parser = struct {
         }
     }
 
-    fn binary(self: *Parser) void {
+    fn binary(self: *Parser, _: bool) void {
         var opType = self.previous.ttype;
 
         const rule = getRule(opType);
@@ -294,7 +360,7 @@ const Parser = struct {
         }
     }
 
-    fn literal(self: *Parser) void {
+    fn literal(self: *Parser, _: bool) void {
         switch (self.previous.ttype) {
             .NIL => self.emitOp(.NIL),
             .FALSE => self.emitOp(.FALSE),
@@ -303,11 +369,25 @@ const Parser = struct {
         }
     }
 
-    fn string(self: *Parser) void {
+    fn string(self: *Parser, _: bool) void {
         const lexeme = self.previous.lexeme;
         const lexLen = lexeme.len;
         const str = Obj.String.copy(self.vm, lexeme[1 .. lexLen - 1]) catch unreachable;
         self.emitConstant(str.obj.value());
+    }
+
+    fn variable(self: *Parser, canAssign: bool) void {
+        self.namedVariable(&self.previous, canAssign);
+    }
+
+    fn namedVariable(self: *Parser, name: *Token, canAssign: bool) void {
+        const arg = self.identifierConstant(name) catch unreachable;
+        if (canAssign and self.match(.EQUAL)) {
+            self.expression();
+            self.emitUnaryOp(.SET_GLOBAL, arg);
+        } else {
+            self.emitUnaryOp(.GET_GLOBAL, arg);
+        }
     }
 };
 
@@ -317,7 +397,7 @@ const ParseRule = struct {
     precedence: Precedence,
 };
 
-pub const ParseFn = fn (self: *Parser) void;
+pub const ParseFn = fn (self: *Parser, canAssign: bool) void;
 
 fn makeRule(comptime prefix: ?*const ParseFn, comptime infix: ?*const ParseFn, comptime precedence: Precedence) ParseRule {
     return ParseRule{
@@ -348,7 +428,7 @@ fn getRule(ttype: TokenType) ParseRule {
         .GREATER_EQUAL => makeRule(null, Parser.binary, Precedence.Comparison),
         .LESS => makeRule(null, Parser.binary, Precedence.Comparison),
         .LESS_EQUAL => makeRule(null, Parser.binary, Precedence.Comparison),
-        .IDENTIFIER => makeRule(null, null, Precedence.None),
+        .IDENTIFIER => makeRule(Parser.variable, null, Precedence.None),
         .STRING => makeRule(Parser.string, null, Precedence.None),
         .NUMBER => makeRule(Parser.number, null, Precedence.None),
         .AND => makeRule(null, null, Precedence.None),

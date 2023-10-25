@@ -25,6 +25,7 @@ pub const VM = struct {
     allocator: Allocator,
     objects: ?*Obj, // tracks heap allocated Objs
     strings: Table,
+    globals: Table,
 
     pub fn create() VM {
         return VM{
@@ -34,6 +35,7 @@ pub const VM = struct {
             .allocator = undefined,
             .objects = null,
             .strings = undefined,
+            .globals = undefined,
         };
     }
 
@@ -43,12 +45,14 @@ pub const VM = struct {
         self.stack = try Stack(Value).init(allocator, STACK_MAX);
         self.chunk = Chunk.init(allocator);
         self.strings = Table.init(allocator);
+        self.globals = Table.init(allocator);
     }
 
     pub fn deinit(self: *VM) void {
         self.stack.deinit();
         self.chunk.deinit();
         self.strings.deinit();
+        self.globals.deinit();
         self.freeObjects();
     }
 
@@ -69,7 +73,7 @@ pub const VM = struct {
     fn run(self: *VM) InterpretResult {
         while (true) {
             const instruction = self.readByte();
-            const opCode: OpCode = @intToEnum(OpCode, instruction);
+            const opCode: OpCode = @enumFromInt(instruction);
             self.runOp(opCode) catch unreachable;
             if (opCode == .RETURN and self.stack.items.len == 0) break;
         }
@@ -109,6 +113,29 @@ pub const VM = struct {
                 const stdout = std.io.getStdOut().writer();
                 try stdout.print("{any}\n", .{self.pop()});
             },
+            .POP => _ = self.pop(),
+            .DEFINE_GLOBAL => {
+                const name = self.readString();
+                const value = self.peek(0);
+                _ = try self.globals.set(name, value);
+                _ = self.pop();
+            },
+            .GET_GLOBAL => {
+                const name = self.readString();
+                var value: Value = undefined;
+                if (!self.globals.get(name, &value)) {
+                    return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
+                }
+
+                self.push(value);
+            },
+            .SET_GLOBAL => {
+                const name = self.readString();
+                if (try self.globals.set(name, self.peek(0))) {
+                    _ = try self.globals.delete(name);
+                    return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
+                }
+            },
             .RETURN => {
                 //const result = self.pop();
                 //std.debug.print("RESULT: {s}\n", .{result});
@@ -142,6 +169,7 @@ pub const VM = struct {
 
         return error.RuntimeError;
     }
+
     fn runBinaryOp(self: *VM, op: OpCode) !void {
         if (self.peek(1).isObjType(.String) or self.peek(0).isObjType(.String)) {
             try self.concatenate();
@@ -162,6 +190,7 @@ pub const VM = struct {
             return self.runtimeError("Operands must be numbers", .{});
         }
     }
+
     fn runBinaryComparison(self: *VM, op: OpCode) !void {
         if (!self.peek(1).isNumber() or !self.peek(0).isNumber()) {
             return self.runtimeError("Operands must be numbers", .{});
@@ -197,6 +226,10 @@ pub const VM = struct {
         _ = self.pop();
 
         self.push(result.obj.value());
+    }
+
+    fn readString(self: *VM) *Obj.String {
+        return self.chunk.constants.items[self.readByte()].asObjType(.String);
     }
 
     fn resetStack(self: *VM) void {

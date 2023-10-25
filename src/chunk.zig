@@ -9,6 +9,10 @@ pub const OpCode = enum(u8) {
     NIL,
     TRUE,
     FALSE,
+    POP,
+    DEFINE_GLOBAL,
+    GET_GLOBAL,
+    SET_GLOBAL,
     EQUAL,
     GREATER,
     LESS,
@@ -92,6 +96,10 @@ pub const Chunk = struct {
             .EQUAL => self.simpleInstruction("EQUAL", offset),
             .LESS => self.simpleInstruction("LESS", offset),
             .PRINT => self.simpleInstruction("PRINT", offset),
+            .POP => self.simpleInstruction("POP", offset),
+            .DEFINE_GLOBAL => self.constantInstruction("DEFINE_GLOBAL", offset),
+            .GET_GLOBAL => self.constantInstruction("GET_GLOBAL", offset),
+            .SET_GLOBAL => self.constantInstruction("SET_GLOBAL", offset),
         };
     }
 
