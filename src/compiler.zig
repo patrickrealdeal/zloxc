@@ -12,6 +12,9 @@ const debug = @import("./debug.zig");
 const Obj = @import("./object.zig").Obj;
 
 pub fn compile(vm: *VM, source: []const u8, chunk: *Chunk) bool {
+    const compiler = try Compiler.init(vm);
+    defer compiler.deinit();
+
     var parser = try Parser.init(vm, chunk, source);
     parser.advance();
 
@@ -27,15 +30,26 @@ pub fn compile(vm: *VM, source: []const u8, chunk: *Chunk) bool {
     return !parser.hadError;
 }
 
-//const Compiler = struct {
-//    chunk: Chunk,
+pub const Compiler = struct {
+    locals: std.ArrayList(Local),
+    scopeDepth: usize,
 
-//    pub fn init(chunk: *Chunk) Compiler {
-//       return Compiler{
-//            .chunk = chunk,
-//        };
-//    }
-//};
+    pub fn init(vm: *VM) !Compiler {
+        return Compiler{
+            .locals = std.ArrayList(Local).init(vm.allocator),
+            .scopeDepth = 0,
+        };
+    }
+
+    pub fn deinit(self: *Compiler) void {
+        self.locals.deinit();
+    }
+};
+
+const Local = struct {
+    name: Token,
+    depth: usize,
+};
 
 // Ordered from lowest to higher
 const Precedence = enum(u8) {
@@ -169,7 +183,7 @@ const Parser = struct {
         return self.makeConstant(string_obj.obj.value());
     }
 
-    // We skip tokens indiscriminately until we reach something 
+    // We skip tokens indiscriminately until we reach something
     // that looks like a statement boundary
     fn synchronize(self: *Parser) void {
         self.panicMode = false;
