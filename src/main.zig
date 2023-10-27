@@ -51,7 +51,7 @@ fn repl(allocator: Allocator) !void {
             continue;
         }
         const source = buf[0..input];
-        const result = vm.interpret(source);
+        const result = try vm.interpret(source);
         switch (result) {
             .INTERPRET_OK => continue,
             .INTERPRET_COMPILE_ERROR => std.process.exit(65),
@@ -67,7 +67,7 @@ fn runFile(allocator: Allocator, path: []const u8) !void {
 
     const source = try std.fs.cwd().readFileAlloc(allocator, path, 1_000_000);
     defer allocator.free(source);
-    const result = vm.interpret(source);
+    const result = try vm.interpret(source);
     switch (result) {
         .INTERPRET_OK => return,
         .INTERPRET_COMPILE_ERROR => std.process.exit(65),

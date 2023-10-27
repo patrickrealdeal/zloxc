@@ -3,9 +3,9 @@ const Obj = @import("./object.zig").Obj;
 
 pub const ValueType = enum {
     Bool,
-    Nil,
     Number,
     Obj,
+    Nil,
 };
 
 pub const Value = union(ValueType) {

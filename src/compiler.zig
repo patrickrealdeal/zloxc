@@ -12,10 +12,10 @@ const debug = @import("./debug.zig");
 const Obj = @import("./object.zig").Obj;
 
 pub fn compile(vm: *VM, source: []const u8, chunk: *Chunk) bool {
-    const compiler = try Compiler.init(vm);
+    var compiler = try Compiler.init(vm);
     defer compiler.deinit();
 
-    var parser = try Parser.init(vm, chunk, source);
+    var parser = try Parser.init(vm, &compiler, chunk, source);
     parser.advance();
 
     if (parser.hadError) {
@@ -48,7 +48,7 @@ pub const Compiler = struct {
 
 const Local = struct {
     name: Token,
-    depth: usize,
+    depth: i32,
 };
 
 // Ordered from lowest to higher
@@ -78,11 +78,11 @@ const Parser = struct {
     current: Token,
     previous: Token,
     hadError: bool,
-    // compiler: *Compiler,
+    compiler: *Compiler,
     panicMode: bool,
     chunk: *Chunk,
 
-    pub fn init(vm: *VM, chunk: *Chunk, source: []const u8) !Parser {
+    pub fn init(vm: *VM, compiler: *Compiler, chunk: *Chunk, source: []const u8) !Parser {
         return Parser{
             .vm = vm,
             .scanner = Scanner.init(source),
@@ -91,7 +91,7 @@ const Parser = struct {
             .hadError = false,
             .panicMode = false,
             .chunk = chunk,
-            //.compiler = compiler,
+            .compiler = compiler,
         };
     }
 
@@ -135,6 +135,10 @@ const Parser = struct {
     fn statement(self: *Parser) void {
         if (self.match(.PRINT)) {
             self.printStatement();
+        } else if (self.match(.LEFT_BRACE)) {
+            self.beginScope();
+            self.block();
+            self.endScope();
         } else {
             self.expressionStatement();
         }
@@ -170,17 +174,87 @@ const Parser = struct {
 
     fn parseVariable(self: *Parser, message: []const u8) !u8 {
         self.consume(.IDENTIFIER, message);
+
+        try self.declareVariable();
+        if (self.compiler.scopeDepth > 0) return 0;
+
         return self.identifierConstant(&self.previous);
     }
 
     fn defineVariable(self: *Parser, global: u8) void {
+        if (self.compiler.scopeDepth > 0) {
+            self.markInitialized();
+            return;
+        }
+
         self.emitUnaryOp(.DEFINE_GLOBAL, global);
+    }
+
+    // “Declaring” is when the variable is added to the scope, and “defining” is when it becomes available for use.
+    fn markInitialized(self: *Parser) void {
+        var locals = &self.compiler.locals;
+        locals.items[locals.items.len - 1].depth = @intCast(self.compiler.scopeDepth);
+    }
+
+    fn declareVariable(self: *Parser) !void {
+        if (self.compiler.scopeDepth == 0) return;
+
+        const name = self.previous;
+        // detect vars with same name in same local scope
+        var i: i32 = @as(i32, @intCast(self.compiler.locals.items.len)) - 1;
+        while (i >= 0) : (i -= 1) {
+            const local_index = @as(u8, @intCast(i));
+            const local = self.compiler.locals.items[local_index];
+            if (local.depth != 1 and local.depth < self.compiler.scopeDepth) break;
+
+            if (std.mem.eql(u8, name.lexeme, local.name.lexeme)) {
+                self.err("Already a variable with this name in this scope.");
+            }
+        }
+
+        try self.addLocal(name);
+    }
+
+    fn addLocal(self: *Parser, name: Token) !void {
+        if (self.compiler.locals.items.len > std.math.maxInt(u8)) {
+            self.err("Too many local variables in function.");
+            return;
+        }
+
+        const local = Local{
+            .name = name,
+            .depth = -1,
+        };
+
+        try self.compiler.locals.append(local);
     }
 
     // Takes the given token and adds its lexeme to the chunk’s constant table as a string.
     fn identifierConstant(self: *Parser, name: *Token) !u8 {
         const string_obj = try Obj.String.copy(self.vm, name.lexeme);
         return self.makeConstant(string_obj.obj.value());
+    }
+
+    fn block(self: *Parser) void {
+        while (!self.check(.RIGHT_BRACE) and !self.check(.EOF)) {
+            self.declaration();
+        }
+
+        self.consume(.RIGHT_BRACE, "Expect '}' after block.");
+    }
+
+    fn beginScope(self: *Parser) void {
+        self.compiler.scopeDepth += 1;
+    }
+
+    fn endScope(self: *Parser) void {
+        self.compiler.scopeDepth -= 1;
+        var locals = &self.compiler.locals;
+        while (locals.items.len > 0 and locals.items[locals.items.len - 1].depth > self.compiler.scopeDepth) {
+            self.emitOp(.POP);
+
+            _ = locals.pop();
+        }
     }
 
     // We skip tokens indiscriminately until we reach something
@@ -397,13 +471,46 @@ const Parser = struct {
     }
 
     fn namedVariable(self: *Parser, name: *Token, canAssign: bool) void {
-        const arg = self.identifierConstant(name) catch unreachable;
+        var arg: u8 = undefined;
+        var getOp: OpCode = undefined;
+        var setOp: OpCode = undefined;
+
+        if (self.resolveLocal(name)) |v| {
+            getOp = .GET_LOCAL;
+            setOp = .SET_LOCAL;
+            arg = v;
+        } else {
+            arg = self.identifierConstant(name) catch unreachable;
+            getOp = .GET_GLOBAL;
+            setOp = .SET_GLOBAL;
+        }
+
         if (canAssign and self.match(.EQUAL)) {
             self.expression();
-            self.emitUnaryOp(.SET_GLOBAL, arg);
+            self.emitUnaryOp(setOp, arg);
         } else {
-            self.emitUnaryOp(.GET_GLOBAL, arg);
+            self.emitUnaryOp(getOp, arg);
         }
+    }
+
+    fn resolveLocal(self: *Parser, name: *Token) ?u8 {
+        var locals = self.compiler.locals;
+
+        var i: i32 = @as(i32, @intCast(locals.items.len)) - 1;
+        while (i >= 0) : (i -= 1) {
+            const local_index = @as(u8, @intCast(i));
+            const local = locals.items[local_index];
+            if (std.mem.eql(u8, name.lexeme, local.name.lexeme)) {
+                // Check if local is fully defined
+                if (local.depth == -1) {
+                    self.err("Can't read local variable in its own initializer.");
+                }
+
+                return @as(u8, @intCast(i));
+            }
+        }
+
+        return null;
     }
 };
 

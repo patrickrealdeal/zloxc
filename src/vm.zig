@@ -56,7 +56,7 @@ pub const VM = struct {
         self.freeObjects();
     }
 
-    pub fn interpret(self: *VM, source: []const u8) InterpretResult {
+    pub fn interpret(self: *VM, source: []const u8) !InterpretResult {
         // Assert the Stack is empty at beginning and end
         std.debug.assert(self.stack.items.len == 0);
         defer std.debug.assert(self.stack.items.len == 0);
@@ -141,6 +141,14 @@ pub const VM = struct {
                     _ = try self.globals.delete(name);
                     return self.runtimeError("Undefined variable '{s}'.", .{name.bytes});
                 }
+            },
+            .GET_LOCAL => {
+                const slot = self.readByte();
+                self.push(self.stack.items[slot]);
+            },
+            .SET_LOCAL => {
+                const slot = self.readByte();
+                self.stack.items[slot] = self.peek(0);
             },
             .RETURN => {
                 //const result = self.pop();
