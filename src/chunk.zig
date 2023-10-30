@@ -25,6 +25,9 @@ pub const OpCode = enum(u8) {
     NOT,
     NEGATE,
     PRINT,
+    JUMP,
+    JUMP_IF_FALSE,
+    LOOP,
     RETURN, // return from current function
 };
 
@@ -104,6 +107,9 @@ pub const Chunk = struct {
             .SET_GLOBAL => self.constantInstruction("SET_GLOBAL", offset),
             .GET_LOCAL => self.byteInstruction("GET_LOCAL", offset),
             .SET_LOCAL => self.byteInstruction("SET_LOCAL", offset),
+            .JUMP => self.jumpInstruction("JUMP", 1, offset),
+            .JUMP_IF_FALSE => self.jumpInstruction("JUMP_IF_FALSE", 1, offset),
+            .LOOP => self.jumpInstruction("LOOP", -1, offset),
         };
     }
 
@@ -123,5 +129,13 @@ pub const Chunk = struct {
         const constant = self.code.items[offset + 1];
         std.debug.print("{s} {d} {}\n", .{ name, constant, self.constants.items[constant] });
         return offset + 2;
+    }
+
+    fn jumpInstruction(self: *Chunk, name: []const u8, sign: isize, offset: usize) usize {
+        var jump = @as(u16, @intCast(self.code.items[offset + 1])) << 8;
+        jump |= self.code.items[offset + 2];
+        const target = @as(isize, @intCast(offset)) + 3 + sign * @as(isize, @intCast(jump));
+        std.debug.print("{s} {d} -> {d}\n", .{ name, offset, target });
+        return offset + 3;
     }
 };

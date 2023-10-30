@@ -150,6 +150,18 @@ pub const VM = struct {
                 const slot = self.readByte();
                 self.stack.items[slot] = self.peek(0);
             },
+            .JUMP => {
+                const offset = self.readShort();
+                self.ip += offset;
+            },
+            .JUMP_IF_FALSE => {
+                const offset = self.readShort();
+                if (self.peek(0).isFalsey()) self.ip += offset;
+            },
+            .LOOP => {
+                const offset = self.readShort();
+                self.ip -= offset;
+            },
             .RETURN => {
                 //const result = self.pop();
                 //std.debug.print("RESULT: {s}\n", .{result});
@@ -185,7 +197,7 @@ pub const VM = struct {
     }
 
     fn runBinaryOp(self: *VM, op: OpCode) !void {
-        if (self.peek(1).isObjType(.String) or self.peek(0).isObjType(.String)) {
+        if (self.peek(1).isObjType(.String) and self.peek(0).isObjType(.String)) {
             // TODO: Disallow other operators for string concat.
             try self.concatenate();
         } else if (self.peek(1).isNumber() and self.peek(0).isNumber()) {
@@ -253,6 +265,14 @@ pub const VM = struct {
         const byte = self.chunk.code.items[self.ip];
         self.ip += 1;
         return byte;
+    }
+
+    fn readShort(self: *VM) u16 {
+        const items = self.chunk.code.items;
+        const value = @as(u16, @intCast(items[self.ip])) << 8 | items[self.ip + 1];
+
+        self.ip += 2;
+        return value;
     }
 
     pub fn push(self: *VM, value: Value) void {

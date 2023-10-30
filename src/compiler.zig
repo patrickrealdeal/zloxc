@@ -139,6 +139,12 @@ const Parser = struct {
             self.beginScope();
             self.block();
             self.endScope();
+        } else if (self.match(.IF)) {
+            self.ifStatement();
+        } else if (self.match(.WHILE)) {
+            self.whileStatement();
+        } else if (self.match(.FOR)) {
+            self.forStatement();
         } else {
             self.expressionStatement();
         }
@@ -149,6 +155,93 @@ const Parser = struct {
         self.expression();
         self.consume(.SEMICOLON, "Expect ';' after expression.");
         self.emitOp(.POP);
+    }
+
+    fn ifStatement(self: *Parser) void {
+        self.consume(.LEFT_PAREN, "Expect '(' after 'if'.");
+        self.expression();
+        self.consume(.RIGHT_PAREN, "Expect ')' after condition.");
+
+        const thenJump = self.emitJump(.JUMP_IF_FALSE);
+        self.emitOp(.POP); // pop the condition value
+        self.statement();
+
+        const elseJump = self.emitJump(.JUMP);
+
+        self.patchJump(thenJump);
+        self.emitOp(.POP);
+
+        if (self.match(.ELSE)) {
+            self.statement();
+        }
+
+        self.patchJump(elseJump);
+    }
+
+    fn whileStatement(self: *Parser) void {
+        const loopStart = self.currentChunk().code.items.len;
+        self.consume(.LEFT_PAREN, "Expected '(' after 'while'.");
+        self.expression();
+        self.consume(.RIGHT_PAREN, "Expected ')' after condition");
+
+        const exitJump = self.emitJump(.JUMP_IF_FALSE);
+        self.emitOp(.POP); // Pop condition Value
+        self.statement();
+        // After executing the body of a while loop,
+        // we jump all the way back to before the condition.
+        self.emitLoop(loopStart);
+
+        self.patchJump(exitJump);
+        self.emitOp(.POP);
+    }
+
+    fn forStatement(self: *Parser) void {
+        self.beginScope(); // varaibles should be scoped to loop body
+
+        // Initializer clause
+        self.consume(.LEFT_PAREN, "Expect '(' after 'for'.");
+        if (self.match(.SEMICOLON)) {
+            // No initializer
+        } else if (self.match(.VAR)) {
+            self.varDeclaration();
+        } else {
+            self.expression();
+        }
+
+        var loopStart = self.currentChunk().code.items.len;
+
+        // Condition clause
+        var exitJump: ?usize = null;
+        if (!self.match(.SEMICOLON)) {
+            self.expression();
+            self.consume(.SEMICOLON, "Expect ';' after loop condition.");
+
+            // Jump out the loop if condition is false
+            exitJump = self.emitJump(.JUMP_IF_FALSE);
+            self.emitOp(.POP);
+        }
+
+        // Increment clause
+        if (!self.match(.RIGHT_PAREN)) {
+            const bodyJump = self.emitJump(.JUMP);
+            const incrementStart = self.currentChunk().code.items.len;
+            self.expression();
+            self.emitOp(.POP);
+            self.consume(.RIGHT_PAREN, "Expected ')' after for clause.");
+
+            self.emitLoop(loopStart);
+            loopStart = incrementStart;
+            self.patchJump(bodyJump);
+        }
+
+        self.statement();
+        self.emitLoop(loopStart);
+
+        if (exitJump) |exit| {
+            self.patchJump(exit);
+            self.emitOp(.POP);
+        }
+        self.endScope();
     }
 
     fn printStatement(self: *Parser) void {
@@ -335,6 +428,39 @@ const Parser = struct {
         self.emitUnaryOp(.CONSTANT, self.makeConstant(value));
     }
 
+    fn emitJump(self: *Parser, op: OpCode) usize {
+        self.emitOp(op);
+        // Backpatching, We emit the jump instruction
+        // first with a placeholder offset operand
+        self.emitByte(0xff); // We use two bytes for the jump offset
+        self.emitByte(0xff); // 16-bit offset lets us jump over up to 65,535 bytes of code
+        return self.currentChunk().code.items.len - 2;
+    }
+
+    fn emitLoop(self: *Parser, loopStart: usize) void {
+        self.emitOp(.LOOP);
+
+        const offset: u16 = @intCast(self.currentChunk().code.items.len - loopStart + 2);
+        if (offset > std.math.maxInt(u16)) self.err("Loop body too large.");
+
+        self.emitByte(@as(u8, @truncate((offset >> 8) & 0xff)));
+        self.emitByte(@as(u8, @truncate(offset & 0xff)));
+    }
+
+    fn patchJump(self: *Parser, offset: usize) void {
+        // -2 to adjust for the bytecode for the jump offset itself.
+        const jump = self.currentChunk().code.items.len - offset - 2;
+
+        if (jump > std.math.maxInt(u16)) {
+            self.err("Too much code to jump over.");
+        }
+
+        // replaces the operand at the given location
+        // with the calculated jump offset
+        self.currentChunk().code.items[offset] = @as(u8, @intCast(jump >> 8 & 0xff));
+        self.currentChunk().code.items[offset + 1] = @as(u8, @intCast(jump & 0xff));
+    }
+
     fn match(self: *Parser, ttype: TokenType) bool {
         if (!self.check(ttype)) return false;
         self.advance();
@@ -470,6 +596,26 @@ const Parser = struct {
         self.namedVariable(&self.previous, canAssign);
     }
 
+    fn and_(self: *Parser, canAssign: bool) void {
+        _ = canAssign;
+        const endJump = self.emitJump(.JUMP_IF_FALSE);
+        self.emitOp(.POP);
+        self.parsePrecedence(.And);
+        self.patchJump(endJump);
+    }
+
+    fn or_(self: *Parser, canAssign: bool) void {
+        _ = canAssign;
+        const elseJump = self.emitJump(.JUMP_IF_FALSE);
+        const endJump = self.emitJump(.JUMP);
+
+        self.patchJump(elseJump);
+        self.emitOp(.POP);
+
+        self.parsePrecedence(.Or);
+        self.patchJump(endJump);
+    }
+
     fn namedVariable(self: *Parser, name: *Token, canAssign: bool) void {
         var arg: u8 = undefined;
         var getOp: OpCode = undefined;
@@ -554,7 +700,7 @@ fn getRule(ttype: TokenType) ParseRule {
         .IDENTIFIER => makeRule(Parser.variable, null, Precedence.None),
         .STRING => makeRule(Parser.string, null, Precedence.None),
         .NUMBER => makeRule(Parser.number, null, Precedence.None),
-        .AND => makeRule(null, null, Precedence.None),
+        .AND => makeRule(null, Parser.and_, Precedence.None),
         .CLASS => makeRule(null, null, Precedence.None),
         .ELSE => makeRule(null, null, Precedence.None),
         .FALSE => makeRule(Parser.literal, null, Precedence.None),
@@ -562,7 +708,7 @@ fn getRule(ttype: TokenType) ParseRule {
         .FUN => makeRule(null, null, Precedence.None),
         .IF => makeRule(null, null, Precedence.None),
         .NIL => makeRule(Parser.literal, null, Precedence.None),
-        .OR => makeRule(null, null, Precedence.None),
+        .OR => makeRule(null, Parser.or_, Precedence.None),
         .PRINT => makeRule(null, null, Precedence.None),
         .RETURN => makeRule(null, null, Precedence.None),
         .SUPER => makeRule(null, null, Precedence.None),

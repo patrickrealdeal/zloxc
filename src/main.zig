@@ -10,7 +10,7 @@ const debug = @import("./debug.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+    const allocator = gpa.allocator(); // std.heap.c_allocator;
     defer _ = gpa.deinit();
 
     const args = try std.process.argsAlloc(allocator);

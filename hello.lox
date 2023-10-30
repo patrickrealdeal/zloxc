@@ -2,4 +2,29 @@ var breakfast = "beignets";
 var beverage = "cafe au lait";
 breakfast = "beignets with " + beverage;
 
+var c = 6;
+{
+  var a = 2;
+  {
+    var b = 2;
+    print a + b;    
+  }
+}
+
 print breakfast;
+
+if (c > 10) {
+	print c;
+} else {
+	print "c is greater than 10";
+}
+
+var i = 0;
+while (i < 2) {
+	print "Hello, from 'while'";
+	i = i + 1;
+}
+
+for (var i = 0; i < 3; i = i + 1) {
+	print "Hello, from 'for'";
+}
