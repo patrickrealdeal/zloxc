@@ -484,12 +484,6 @@ const Parser = struct {
         self.advance();
 
         const prefixRule = getRule(self.previous.ttype).prefix;
-        if (debug.trace_parser) {
-            std.debug.print("P | {s}: {s}\n", .{
-                @tagName(self.previous.ttype),
-                @tagName(precedence),
-            });
-        }
         if (prefixRule == null) {
             self.err("Expect expression");
             return;
@@ -501,13 +495,6 @@ const Parser = struct {
         while (@intFromEnum(precedence) <= @intFromEnum(getRule(self.current.ttype).precedence)) {
             self.advance();
             const infixRule = getRule(self.previous.ttype).infix;
-            if (debug.trace_parser) {
-                std.debug.print("P | {s}: {s}\n", .{
-                    @tagName(self.previous.ttype),
-                    @tagName(precedence),
-                });
-            }
-
             if (infixRule == null) {
                 self.err("Expected expression");
                 return;
