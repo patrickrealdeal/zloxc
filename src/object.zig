@@ -2,6 +2,8 @@ const std = @import("std");
 const VM = @import("./vm.zig").VM;
 const Value = @import("./value.zig").Value;
 const Table = @import("./table.zig").Table;
+const Chunk = @import("./chunk.zig").Chunk;
+const debug = @import("./debug.zig");
 
 pub const Obj = struct {
     objType: Type,
@@ -9,6 +11,7 @@ pub const Obj = struct {
 
     pub const Type = enum(u8) {
         String,
+        Function,
     };
 
     pub fn create(vm: *VM, comptime T: type, objType: Type) !*Obj {
@@ -22,12 +25,17 @@ pub const Obj = struct {
         // every time we allocate an Obj we insert it in the list
         vm.objects = &ptr.obj;
 
+        if (debug.trace_parser) {
+            std.debug.print("{x} allocate {} for {s}\n", .{ @intFromPtr(&ptr.obj), @sizeOf(T), @typeName(T) });
+        }
+
         return &ptr.obj;
     }
 
     pub fn destroy(self: *Obj, vm: *VM) void {
         switch (self.objType) {
             .String => self.asString().destroy(vm),
+            .Function => self.asFunction().destroy(vm),
         }
     }
 
@@ -39,21 +47,27 @@ pub const Obj = struct {
         return @fieldParentPtr(String, "obj", self);
     }
 
+    pub fn asFunction(self: *Obj) *Function {
+        return @fieldParentPtr(Function, "obj", self);
+    }
+
     pub fn asObjType(self: *Obj, comptime objType: Obj.Type) *ObjType(objType) {
         return switch (objType) {
             .String => self.asString(),
+            .Function => self.asFunction(),
         };
     }
 
     pub fn ObjType(comptime objType: Obj.Type) type {
         return switch (objType) {
             .String => String,
+            .Function => Function,
         };
     }
 
     pub fn equal(self: *const Obj, other: *const Obj) bool {
         switch (self.objType) {
-            .String => return self == other,
+            .String, .Function => return self == other,
         }
     }
 
@@ -65,6 +79,9 @@ pub const Obj = struct {
         switch (self.objType) {
             .String => {
                 return self.asString().bytes;
+            },
+            .Function => {
+                return if (self.asFunction().name) |n| n.bytes else "Function";
             },
         }
     }
@@ -124,6 +141,31 @@ pub const Obj = struct {
             }
 
             return hash;
+        }
+    };
+
+    pub const Function = struct {
+        obj: Obj,
+        arity: u8,
+        chunk: Chunk,
+        name: ?*Obj.String,
+
+        pub fn create(vm: *VM) !*Function {
+            const obj = try Obj.create(vm, Function, .Function);
+            const func = obj.asFunction();
+            func.* = Function{
+                .obj = obj.*,
+                .arity = 0,
+                .name = null,
+                .chunk = Chunk.init(vm.allocator),
+            };
+
+            return func;
+        }
+
+        pub fn destroy(self: *Function, vm: *VM) void {
+            self.chunk.deinit();
+            vm.allocator.destroy(self);
         }
     };
 };

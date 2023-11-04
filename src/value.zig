@@ -100,7 +100,13 @@ pub const Value = union(ValueType) {
                 try out_stream.print("'{s}'", .{value});
             },
             .Nil => |_| try out_stream.print("'nil'", .{}),
-            .Obj => |o| try out_stream.print("\"{s}\"", .{o.toString()}),
+            .Obj => |o| switch (o.objType) {
+                .String => try out_stream.print("{s}", .{o.toString()}),
+                .Function => {
+                    const name = if (o.asFunction().name) |str| str.bytes else "<script>";
+                    try out_stream.print("<fn {s}>", .{name});
+                },
+            },
         }
     }
 };

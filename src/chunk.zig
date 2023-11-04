@@ -31,6 +31,11 @@ pub const OpCode = enum(u8) {
     RETURN, // return from current function
 };
 
+const Line = struct {
+    line: u32,
+    offset: u32,
+};
+
 pub const Chunk = struct {
     code: ArrayList(u8),
     constants: ArrayList(Value),
@@ -48,6 +53,10 @@ pub const Chunk = struct {
         self.code.deinit();
         self.constants.deinit();
         self.lines.deinit();
+    }
+
+    pub fn ptr(self: *const Chunk) [*]u8 {
+        return self.code.items.ptr;
     }
 
     pub fn write(self: *Chunk, byte: u8, line: usize) !void {
@@ -78,8 +87,9 @@ pub const Chunk = struct {
     fn disassembleInstruction(self: *Chunk, offset: usize) usize {
         std.debug.print("{:0>4} ", .{offset});
 
+        // Print line
         if (offset > 0 and self.lines.items[offset] == self.lines.items[offset - 1]) {
-            std.debug.print("    | ", .{});
+            std.debug.print("     | ", .{});
         } else {
             std.debug.print("{: >4} ", .{self.lines.items[offset]});
         }

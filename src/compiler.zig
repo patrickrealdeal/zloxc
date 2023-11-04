@@ -11,33 +11,39 @@ const Value = @import("./value.zig").Value;
 const debug = @import("./debug.zig");
 const Obj = @import("./object.zig").Obj;
 
-pub fn compile(vm: *VM, source: []const u8, chunk: *Chunk) bool {
-    var compiler = try Compiler.init(vm);
+pub fn compile(vm: *VM, source: []const u8) !*Obj.Function {
+    var compiler = try Compiler.init(vm, .script);
     defer compiler.deinit();
 
-    var parser = try Parser.init(vm, &compiler, chunk, source);
+    // std.debug.print("ALLOCATED FUNC: {x}\n", .{@intFromPtr(compiler.function)});
+
+    var parser = try Parser.init(vm, &compiler, source);
     parser.advance();
 
     if (parser.hadError) {
-        return false;
+        return error.RuntimeError;
     }
 
     while (!parser.match(.EOF)) {
         parser.declaration();
     }
 
-    parser.endCompiler();
-    return !parser.hadError;
+    const func = parser.endCompiler();
+    return func;
 }
 
 pub const Compiler = struct {
     locals: std.ArrayList(Local),
     scopeDepth: usize,
+    function: *Obj.Function,
+    T: FunctionType,
 
-    pub fn init(vm: *VM) !Compiler {
+    pub fn init(vm: *VM, T: FunctionType) !Compiler {
         return Compiler{
             .locals = std.ArrayList(Local).init(vm.allocator),
             .scopeDepth = 0,
+            .function = try Obj.Function.create(vm),
+            .T = T,
         };
     }
 
@@ -49,6 +55,11 @@ pub const Compiler = struct {
 const Local = struct {
     name: Token,
     depth: i32,
+};
+
+const FunctionType = enum {
+    function,
+    script,
 };
 
 // Ordered from lowest to higher
@@ -80,23 +91,21 @@ const Parser = struct {
     hadError: bool,
     compiler: *Compiler,
     panicMode: bool,
-    chunk: *Chunk,
 
-    pub fn init(vm: *VM, compiler: *Compiler, chunk: *Chunk, source: []const u8) !Parser {
+    pub fn init(vm: *VM, compiler: *Compiler, source: []const u8) !Parser {
         return Parser{
             .vm = vm,
             .scanner = Scanner.init(source),
             .current = undefined,
             .previous = undefined,
             .hadError = false,
-            .panicMode = false,
-            .chunk = chunk,
             .compiler = compiler,
+            .panicMode = false,
         };
     }
 
     fn currentChunk(self: *Parser) *Chunk {
-        return self.chunk;
+        return &self.compiler.function.chunk;
     }
 
     /// Asks the Scanner for next Token and stores it for later use
@@ -364,11 +373,15 @@ const Parser = struct {
         }
     }
 
-    fn endCompiler(self: *Parser) void {
+    fn endCompiler(self: *Parser) !*Obj.Function {
         self.emitReturn();
+        const func = self.compiler.function;
         if (!self.hadError and debug.trace_parser) {
-            self.currentChunk().disassemble("code") catch unreachable;
+            const name = if (self.compiler.function.name) |o| o.bytes else "<script>";
+            try self.currentChunk().disassemble(name);
         }
+
+        return func;
     }
 
     /// Validates that Token has the expected type
@@ -412,7 +425,7 @@ const Parser = struct {
     }
 
     fn emitOp(self: *Parser, op: OpCode) void {
-        self.currentChunk().writeOp(op, self.previous.line) catch unreachable;
+        self.emitByte(@intFromEnum(op));
     }
 
     fn emitReturn(self: *Parser) void {
@@ -420,7 +433,7 @@ const Parser = struct {
     }
 
     fn emitUnaryOp(self: *Parser, op: OpCode, byte: u8) void {
-        self.emitOp(op);
+        self.emitByte(@intFromEnum(op));
         self.emitByte(byte);
     }
 
