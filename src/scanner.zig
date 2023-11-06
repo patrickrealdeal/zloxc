@@ -74,6 +74,14 @@ pub const Token = struct {
 
         return string;
     }
+
+    pub fn symbol(name: []const u8) Token {
+        return Token{
+            .ttype = .IDENTIFIER,
+            .lexeme = name,
+            .line = 0,
+        };
+    }
 };
 
 pub const Scanner = struct {
@@ -138,7 +146,7 @@ pub const Scanner = struct {
             'e' => self.checkKeyword(1, "lse", .ELSE),
             'i' => self.checkKeyword(1, "f", .IF),
             'n' => self.checkKeyword(1, "il", .NIL),
-            'o' => self.checkKeyword(1, "or", .OR),
+            'o' => self.checkKeyword(1, "r", .OR),
             'p' => self.checkKeyword(1, "rint", .PRINT),
             'r' => self.checkKeyword(1, "eturn", .RETURN),
             's' => self.checkKeyword(1, "uper", .SUPER),
@@ -148,7 +156,7 @@ pub const Scanner = struct {
                 return switch (self.source[1]) {
                     'a' => self.checkKeyword(2, "lse", .FALSE),
                     'o' => self.checkKeyword(2, "r", .FOR),
-                    'u' => self.checkKeyword(2, "un", .FUN),
+                    'u' => self.checkKeyword(2, "n", .FUN),
                     else => .IDENTIFIER,
                 };
             },

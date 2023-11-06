@@ -28,6 +28,7 @@ pub const OpCode = enum(u8) {
     JUMP,
     JUMP_IF_FALSE,
     LOOP,
+    CALL,
     RETURN, // return from current function
 };
 
@@ -120,6 +121,7 @@ pub const Chunk = struct {
             .JUMP => self.jumpInstruction("JUMP", 1, offset),
             .JUMP_IF_FALSE => self.jumpInstruction("JUMP_IF_FALSE", 1, offset),
             .LOOP => self.jumpInstruction("LOOP", -1, offset),
+            .CALL => self.byteInstruction("CALL", offset),
         };
     }
 

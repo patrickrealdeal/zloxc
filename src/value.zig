@@ -94,10 +94,10 @@ pub const Value = union(ValueType) {
         _ = fmt;
         _ = options;
         switch (self) {
-            .Number => |value| try out_stream.print("'{d}'", .{value}),
+            .Number => |value| try out_stream.print("{d}", .{value}),
             .Bool => |b| {
                 const value = if (b) "true" else "false";
-                try out_stream.print("'{s}'", .{value});
+                try out_stream.print("{s}", .{value});
             },
             .Nil => |_| try out_stream.print("'nil'", .{}),
             .Obj => |o| switch (o.objType) {

@@ -12,10 +12,8 @@ const debug = @import("./debug.zig");
 const Obj = @import("./object.zig").Obj;
 
 pub fn compile(vm: *VM, source: []const u8) !*Obj.Function {
-    var compiler = try Compiler.init(vm, .script);
+    var compiler = try Compiler.init(vm, .script, null);
     defer compiler.deinit();
-
-    // std.debug.print("ALLOCATED FUNC: {x}\n", .{@intFromPtr(compiler.function)});
 
     var parser = try Parser.init(vm, &compiler, source);
     parser.advance();
@@ -25,25 +23,29 @@ pub fn compile(vm: *VM, source: []const u8) !*Obj.Function {
     }
 
     while (!parser.match(.EOF)) {
-        parser.declaration();
+        try parser.declaration();
     }
 
     const func = parser.endCompiler();
     return func;
 }
 
+const Error = error{ CompileError, RuntimeError, OutOfMemory };
+
 pub const Compiler = struct {
     locals: std.ArrayList(Local),
     scopeDepth: usize,
     function: *Obj.Function,
     T: FunctionType,
+    enclosing: ?*Compiler,
 
-    pub fn init(vm: *VM, T: FunctionType) !Compiler {
+    pub fn init(vm: *VM, T: FunctionType, enclosing: ?*Compiler) !Compiler {
         return Compiler{
             .locals = std.ArrayList(Local).init(vm.allocator),
             .scopeDepth = 0,
             .function = try Obj.Function.create(vm),
             .T = T,
+            .enclosing = enclosing,
         };
     }
 
@@ -81,7 +83,7 @@ const Precedence = enum(u8) {
     }
 };
 
-const CompilerErrors = error{OutOfMemory} || std.os.WriteError;
+// const CompilerErrors = error{OutOfMemory} || std.os.WriteError;
 
 const Parser = struct {
     vm: *VM,
@@ -129,16 +131,57 @@ const Parser = struct {
         self.parsePrecedence(.Assignment);
     }
 
-    fn declaration(self: *Parser) void {
-        if (self.match(.VAR)) {
+    fn declaration(self: *Parser) !void {
+        if (self.match(.FUN)) {
+            try self.funDeclaration();
+        } else if (self.match(.VAR)) {
             self.varDeclaration();
         } else {
             self.statement();
         }
 
-        if (self.panicMode) {
-            self.synchronize();
+        if (self.panicMode) self.synchronize();
+    }
+
+    fn funDeclaration(self: *Parser) !void {
+        const global = try self.parseVariable("Expect function name");
+        //     self.markInitialized();
+        try self.function(.function);
+        self.defineVariable(global);
+    }
+
+    fn function(self: *Parser, T: FunctionType) !void {
+        var compiler = try Compiler.init(self.vm, T, self.compiler);
+        defer compiler.deinit();
+
+        self.compiler = &compiler;
+        self.compiler.function.name = try Obj.String.copy(self.vm, self.previous.lexeme);
+
+        self.beginScope();
+        self.consume(.LEFT_PAREN, "Expect '(' after function name.");
+        // Parameters
+        if (!self.check(.RIGHT_PAREN)) {
+            while (true) {
+                if (self.compiler.function.arity == 32) {
+                    self.errorAtCurrent("Cannot have more than 32 parameters.");
+                }
+
+                self.compiler.function.arity += 1;
+                const paramConstant = try self.parseVariable("Expect parameter name.");
+                self.defineVariable(paramConstant);
+                if (!self.match(.COMMA)) break;
+            }
         }
+
+        self.consume(.RIGHT_PAREN, "Expect ')' after parameters.");
+
+        // Body
+        self.consume(.LEFT_BRACE, "Expect '{' before function body.");
+        try self.block();
+        self.endScope();
+
+        const func = try self.endCompiler();
+        self.emitUnaryOp(.CONSTANT, self.makeConstant(func.obj.value()));
     }
 
     fn statement(self: *Parser) void {
@@ -146,10 +189,12 @@ const Parser = struct {
             self.printStatement();
         } else if (self.match(.LEFT_BRACE)) {
             self.beginScope();
-            self.block();
+            self.block() catch unreachable;
             self.endScope();
         } else if (self.match(.IF)) {
             self.ifStatement();
+        } else if (self.match(.RETURN)) {
+            self.returnStatement();
         } else if (self.match(.WHILE)) {
             self.whileStatement();
         } else if (self.match(.FOR)) {
@@ -159,11 +204,25 @@ const Parser = struct {
         }
     }
 
+    fn returnStatement(self: *Parser) void {
+        if (self.compiler.T == .script) {
+            self.err("Can't return from top-level code.");
+        }
+
+        if (self.match(.SEMICOLON)) {
+            self.emitReturn();
+        } else {
+            self.expression();
+            self.consume(.SEMICOLON, "Expect ';' after return value.");
+            self.emitOp(.RETURN);
+        }
+    }
+
     // Semantically, an expression statement evaluates the expression and discards the result.
     fn expressionStatement(self: *Parser) void {
         self.expression();
-        self.consume(.SEMICOLON, "Expect ';' after expression.");
         self.emitOp(.POP);
+        self.consume(.SEMICOLON, "Expect ';' after expression.");
     }
 
     fn ifStatement(self: *Parser) void {
@@ -294,6 +353,7 @@ const Parser = struct {
 
     // “Declaring” is when the variable is added to the scope, and “defining” is when it becomes available for use.
     fn markInitialized(self: *Parser) void {
+        if (self.compiler.scopeDepth == 0) return;
         var locals = &self.compiler.locals;
         locals.items[locals.items.len - 1].depth = @intCast(self.compiler.scopeDepth);
     }
@@ -306,7 +366,7 @@ const Parser = struct {
         var i: i32 = @as(i32, @intCast(self.compiler.locals.items.len)) - 1;
         while (i >= 0) : (i -= 1) {
             const local_index = @as(u8, @intCast(i));
-            const local = self.compiler.locals.items[local_index];
+            const local = &self.compiler.locals.items[local_index];
             if (local.depth != 1 and local.depth < self.compiler.scopeDepth) break;
 
             if (std.mem.eql(u8, name.lexeme, local.name.lexeme)) {
@@ -337,9 +397,9 @@ const Parser = struct {
         return self.makeConstant(string_obj.obj.value());
     }
 
-    fn block(self: *Parser) void {
+    fn block(self: *Parser) Error!void {
         while (!self.check(.RIGHT_BRACE) and !self.check(.EOF)) {
-            self.declaration();
+            try self.declaration();
         }
 
         self.consume(.RIGHT_BRACE, "Expect '}' after block.");
@@ -375,10 +435,17 @@ const Parser = struct {
 
     fn endCompiler(self: *Parser) !*Obj.Function {
         self.emitReturn();
-        const func = self.compiler.function;
+
+        // if (self.hadError) return error.CompileError;
+
         if (!self.hadError and debug.trace_parser) {
             const name = if (self.compiler.function.name) |o| o.bytes else "<script>";
             try self.currentChunk().disassemble(name);
+        }
+
+        const func = self.compiler.function;
+        if (self.compiler.enclosing) |compiler| {
+            self.compiler = compiler;
         }
 
         return func;
@@ -429,6 +496,7 @@ const Parser = struct {
     }
 
     fn emitReturn(self: *Parser) void {
+        self.emitOp(.NIL);
         self.emitOp(.RETURN);
     }
 
@@ -596,16 +664,14 @@ const Parser = struct {
         self.namedVariable(&self.previous, canAssign);
     }
 
-    fn and_(self: *Parser, canAssign: bool) void {
-        _ = canAssign;
+    fn and_(self: *Parser, _: bool) void {
         const endJump = self.emitJump(.JUMP_IF_FALSE);
         self.emitOp(.POP);
         self.parsePrecedence(.And);
         self.patchJump(endJump);
     }
 
-    fn or_(self: *Parser, canAssign: bool) void {
-        _ = canAssign;
+    fn or_(self: *Parser, _: bool) void {
         const elseJump = self.emitJump(.JUMP_IF_FALSE);
         const endJump = self.emitJump(.JUMP);
 
@@ -614,6 +680,30 @@ const Parser = struct {
 
         self.parsePrecedence(.Or);
         self.patchJump(endJump);
+    }
+
+    fn call(self: *Parser, _: bool) void {
+        const arg_count = self.argumentList();
+        self.emitOp(.CALL);
+        self.emitByte(arg_count);
+    }
+
+    fn argumentList(self: *Parser) u8 {
+        var arg_count: u8 = 0;
+        if (!self.check(.RIGHT_PAREN)) {
+            arg_count += 1;
+            self.expression();
+            while (self.match(.COMMA)) {
+                self.expression();
+                if (arg_count == 32) {
+                    self.errorAt(&self.previous, "Cannot have more than 32 arguments.");
+                }
+                arg_count += 1;
+            }
+        }
+
+        self.consume(.RIGHT_PAREN, "Expect ')' after arguments.");
+        return arg_count;
     }
 
     fn namedVariable(self: *Parser, name: *Token, canAssign: bool) void {
@@ -678,7 +768,7 @@ fn makeRule(comptime prefix: ?*const ParseFn, comptime infix: ?*const ParseFn, c
 
 fn getRule(ttype: TokenType) ParseRule {
     return switch (ttype) {
-        .LEFT_PAREN => makeRule(Parser.grouping, null, Precedence.None),
+        .LEFT_PAREN => makeRule(Parser.grouping, Parser.call, Precedence.Call),
         .RIGHT_PAREN => makeRule(null, null, Precedence.None),
         .LEFT_BRACE => makeRule(null, null, Precedence.None),
         .RIGHT_BRACE => makeRule(null, null, Precedence.None),
@@ -700,7 +790,7 @@ fn getRule(ttype: TokenType) ParseRule {
         .IDENTIFIER => makeRule(Parser.variable, null, Precedence.None),
         .STRING => makeRule(Parser.string, null, Precedence.None),
         .NUMBER => makeRule(Parser.number, null, Precedence.None),
-        .AND => makeRule(null, Parser.and_, Precedence.None),
+        .AND => makeRule(null, Parser.and_, Precedence.And),
         .CLASS => makeRule(null, null, Precedence.None),
         .ELSE => makeRule(null, null, Precedence.None),
         .FALSE => makeRule(Parser.literal, null, Precedence.None),
@@ -708,7 +798,7 @@ fn getRule(ttype: TokenType) ParseRule {
         .FUN => makeRule(null, null, Precedence.None),
         .IF => makeRule(null, null, Precedence.None),
         .NIL => makeRule(Parser.literal, null, Precedence.None),
-        .OR => makeRule(null, Parser.or_, Precedence.None),
+        .OR => makeRule(null, Parser.or_, Precedence.Or),
         .PRINT => makeRule(null, null, Precedence.None),
         .RETURN => makeRule(null, null, Precedence.None),
         .SUPER => makeRule(null, null, Precedence.None),

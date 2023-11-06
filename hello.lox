@@ -28,3 +28,10 @@ while (i < 2) {
 for (var i = 0; i < 3; i = i + 1) {
 	print "Hello, from 'for'";
 }
+
+fun areWeHavingItYet(a, b) {
+   print (a + b);
+}
+
+areWeHavingItYet(1,1);
+

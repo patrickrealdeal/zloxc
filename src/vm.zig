@@ -97,23 +97,19 @@ pub const VM = struct {
         // Assert the Stack is empty at beginning and end
         std.debug.assert(self.stack.items.len == 0);
         defer std.debug.assert(self.stack.items.len == 0);
-
         const func = Compiler.compile(self, source) catch {
             return .INTERPRET_COMPILE_ERROR;
         };
 
         self.push(func.obj.value());
-        try self.frames.append(CallFrame{
-            .function = func,
-            .start = 0,
-            .ip = func.chunk.ptr(),
-        });
+        try self.call(func, 0);
 
         _ = self.pop();
 
         if (debug.trace_parser) {
             std.debug.print("STACK: {any}\n", .{self.stack.items});
         }
+
         const result = self.run();
 
         return result;
@@ -126,7 +122,7 @@ pub const VM = struct {
             self.runOp(opCode) catch |err| {
                 if (err == error.RuntimeError) return .INTERPRET_RUNTIME_ERROR;
             };
-            if (opCode == .RETURN and self.stack.items.len == 0) break;
+            if (opCode == .RETURN and self.frames.items.len == 0) break;
         }
 
         return .INTERPRET_OK;
@@ -210,13 +206,49 @@ pub const VM = struct {
                 const offset = self.currentFrame().readShort();
                 self.currentFrame().ip -= offset;
             },
+            .CALL => {
+                const arg_count = self.currentFrame().readByte();
+                std.debug.print("ARG_COUNT: {}\n", .{arg_count});
+                try self.callValue(self.peek(arg_count), arg_count);
+            },
             .RETURN => {
-                //const result = self.pop();
-                //std.debug.print("RESULT: {s}\n", .{result});
-                //if (self.stack.items.len == 0) return;
-                //self.push(result);
+                const result = self.pop();
+                const frame = self.frames.pop();
+
+                if (self.frames.items.len == 0) return;
+
+                try self.stack.resize(frame.start);
+                self.push(result);
             },
         }
+    }
+
+    fn callValue(self: *VM, callee: Value, arg_count: u8) !void {
+        if (!callee.isObj()) return self.runtimeError("Can only call functions and classes.", .{});
+        const obj = callee.asObj();
+        switch (obj.objType) {
+            .Function => try self.call(obj.asFunction(), arg_count),
+            .String => return self.runtimeError("Can only call functions and classes.", .{}),
+        }
+    }
+
+    fn call(self: *VM, func: *Obj.Function, arg_count: u8) !void {
+        if (arg_count != func.arity) {
+            return self.runtimeError("Expected {} arguments but got {}.", .{
+                func.arity,
+                arg_count,
+            });
+        }
+
+        if (self.frames.items.len == 255) {
+            return self.runtimeError("STACK OVERFLOW.", .{});
+        }
+
+        try self.frames.append(CallFrame{
+            .function = func,
+            .ip = func.chunk.ptr(),
+            .start = @as(u32, @intCast(self.stack.items.len)) - arg_count - 1,
+        });
     }
 
     fn currentFrame(self: *VM) *CallFrame {
@@ -243,11 +275,11 @@ pub const VM = struct {
         var i = self.frames.items.len;
         while (i != 0) {
             i -= 1;
-            const frame = self.frames.pop();
+            const frame = &self.frames.items[i];
             const function = frame.function;
             const line = function.chunk.lines.items[i];
             const name = if (function.name) |str| str.bytes else "<script>";
-            std.debug.print("[line {}] in {s}\n", .{ line, name });
+            std.debug.print("[line {d}] in {s}\n", .{ line, name });
         }
         self.resetStack();
 
@@ -256,6 +288,20 @@ pub const VM = struct {
 
     fn resetStack(self: *VM) void {
         self.stack.resize(0) catch unreachable;
+    }
+
+    fn runBinaryBool(self: *VM, op: OpCode) !void {
+        if (!self.peek(1).isBool() or !self.peek(0).isBool()) {
+            return self.runtimeError("Operands must be boolean", .{});
+        }
+        const rhs = self.pop().asBool();
+        const lhs = self.pop().asBool();
+        const result = switch (op) {
+            .AND => lhs and rhs,
+            .OR => lhs or rhs,
+            else => unreachable,
+        };
+        self.push(Value.fromBool(result));
     }
 
     fn runBinaryOp(self: *VM, op: OpCode) !void {
