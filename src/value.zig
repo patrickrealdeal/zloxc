@@ -106,6 +106,18 @@ pub const Value = union(ValueType) {
                     const name = if (o.asFunction().name) |str| str.bytes else "<script>";
                     try out_stream.print("<fn {s}>", .{name});
                 },
+                .Closure => {
+                    const name = if (o.asClosure().function.name) |str| str.bytes else "<script>";
+                    try out_stream.print("<fn {s}>", .{name});
+                },
+                .Native => {
+                    const func = o.asNative();
+                    try out_stream.print("<native fn {s}", .{func.name.bytes});
+                },
+                .Upvalue => {
+                    const val = o.asUpvalue().location;
+                    try out_stream.print("upvalue {}", .{val});
+                },
             },
         }
     }
