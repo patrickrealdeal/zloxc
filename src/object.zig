@@ -12,6 +12,7 @@ pub const Obj = struct {
     pub const Type = enum(u8) {
         String,
         Function,
+        Native,
     };
 
     pub fn create(vm: *VM, comptime T: type, objType: Type) !*Obj {
@@ -36,6 +37,7 @@ pub const Obj = struct {
         switch (self.objType) {
             .String => self.asString().destroy(vm),
             .Function => self.asFunction().destroy(vm),
+            .Native => self.asNative().destroy(vm),
         }
     }
 
@@ -51,10 +53,15 @@ pub const Obj = struct {
         return @fieldParentPtr(Function, "obj", self);
     }
 
+    pub fn asNative(self: *Obj) *Native {
+        return @fieldParentPtr(Native, "obj", self);
+    }
+
     pub fn asObjType(self: *Obj, comptime objType: Obj.Type) *ObjType(objType) {
         return switch (objType) {
             .String => self.asString(),
             .Function => self.asFunction(),
+            .Native => self.asNative(),
         };
     }
 
@@ -62,12 +69,13 @@ pub const Obj = struct {
         return switch (objType) {
             .String => String,
             .Function => Function,
+            .Native => Native,
         };
     }
 
     pub fn equal(self: *const Obj, other: *const Obj) bool {
         switch (self.objType) {
-            .String, .Function => return self == other,
+            .String, .Function, .Native => return self == other,
         }
     }
 
@@ -82,6 +90,9 @@ pub const Obj = struct {
             },
             .Function => {
                 return if (self.asFunction().name) |n| n.bytes else "Function";
+            },
+            .Native => {
+                return "Native";
             },
         }
     }
@@ -165,6 +176,30 @@ pub const Obj = struct {
 
         pub fn destroy(self: *Function, vm: *VM) void {
             self.chunk.deinit();
+            vm.allocator.destroy(self);
+        }
+    };
+
+    pub const Native = struct {
+        obj: Obj,
+        name: *Obj.String,
+        function: *const Fn,
+
+        pub const Fn = fn (vm: *VM, args: []Value) error{RuntimeError}!Value;
+
+        pub fn create(vm: *VM, name: *Obj.String, function: *const Fn) !*Native {
+            const obj = try Obj.create(vm, Native, .Native);
+            const native = obj.asNative();
+            native.* = Native{
+                .obj = obj.*,
+                .name = name,
+                .function = function,
+            };
+
+            return native;
+        }
+
+        pub fn destroy(self: *Native, vm: *VM) void {
             vm.allocator.destroy(self);
         }
     };

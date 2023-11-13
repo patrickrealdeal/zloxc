@@ -101,6 +101,8 @@ pub const VM = struct {
             return .INTERPRET_COMPILE_ERROR;
         };
 
+        try self.defineNative("clock", clock);
+
         self.push(func.obj.value());
         try self.call(func, 0);
         _ = self.pop();
@@ -231,6 +233,12 @@ pub const VM = struct {
         switch (obj.objType) {
             .Function => try self.call(obj.asFunction(), arg_count),
             .String => return self.runtimeError("Can only call functions and classes.", .{}),
+            .Native => {
+                const args = self.stack.items[self.stack.items.len - 1 - arg_count ..];
+                const result = try obj.asNative().function(self, args);
+                self.stack.items.len -= arg_count + 1;
+                self.push(result);
+            },
         }
     }
 
@@ -252,6 +260,25 @@ pub const VM = struct {
             .start = @as(u32, @intCast(self.stack.items.len)) - arg_count,
         });
     }
+
+    pub fn defineNative(self: *VM, name: []const u8, function: *const Obj.Native.Fn) !void {
+        const string = try Obj.String.copy(self, name);
+        const native = try Obj.Native.create(self, string, function);
+        self.push(string.obj.value());
+        self.push(native.obj.value());
+
+        _ = try self.globals.set(string, self.peek(0));
+        _ = self.pop();
+        _ = self.pop();
+    }
+
+    fn clockNative(self: *VM, args: []const Value) error{RuntimeError}!Value {
+        _ = self;
+        _ = args;
+        return Value.fromNumber(@as(f64, @floatFromInt(std.time.milliTimestamp())) / 1000);
+    }
+
+    pub const clock = clockNative;
 
     fn currentFrame(self: *VM) *CallFrame {
         return &self.frames.items[self.frames.items.len - 1];
