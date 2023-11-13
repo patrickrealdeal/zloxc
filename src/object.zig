@@ -12,9 +12,6 @@ pub const Obj = struct {
     pub const Type = enum(u8) {
         String,
         Function,
-        Native,
-        Closure,
-        Upvalue,
     };
 
     pub fn create(vm: *VM, comptime T: type, objType: Type) !*Obj {
@@ -39,9 +36,6 @@ pub const Obj = struct {
         switch (self.objType) {
             .String => self.asString().destroy(vm),
             .Function => self.asFunction().destroy(vm),
-            .Native => self.asNative().destroy(vm),
-            .Closure => self.asClosure().destroy(vm),
-            .Upvalue => self.asUpvalue().destroy(vm),
         }
     }
 
@@ -57,25 +51,10 @@ pub const Obj = struct {
         return @fieldParentPtr(Function, "obj", self);
     }
 
-    pub fn asNative(self: *Obj) *Native {
-        return @fieldParentPtr(Native, "obj", self);
-    }
-
-    pub fn asClosure(self: *Obj) *Closure {
-        return @fieldParentPtr(Closure, "obj", self);
-    }
-
-    pub fn asUpvalue(self: *Obj) *Upvalue {
-        return @fieldParentPtr(Upvalue, "obj", self);
-    }
-
     pub fn asObjType(self: *Obj, comptime objType: Obj.Type) *ObjType(objType) {
         return switch (objType) {
             .String => self.asString(),
             .Function => self.asFunction(),
-            .Native => self.asNative(),
-            .Closure => self.asClosure(),
-            .Upvalue => self.asUpvalue(),
         };
     }
 
@@ -83,15 +62,12 @@ pub const Obj = struct {
         return switch (objType) {
             .String => String,
             .Function => Function,
-            .Native => Native,
-            .Closure => Closure,
-            .Upvalue => Upvalue,
         };
     }
 
     pub fn equal(self: *const Obj, other: *const Obj) bool {
         switch (self.objType) {
-            .String, .Function, .Native, .Closure, .Upvalue => return self == other,
+            .String, .Function => return self == other,
         }
     }
 
@@ -107,15 +83,6 @@ pub const Obj = struct {
             .Function => {
                 return if (self.asFunction().name) |n| n.bytes else "Function";
             },
-            .Native => {
-                return "Native";
-            },
-            .Closure => {
-                return "Closure";
-            },
-            .Upvalue => {
-                return "Upvalue";
-            },
         }
     }
 
@@ -124,37 +91,41 @@ pub const Obj = struct {
         bytes: []const u8,
         hash: usize,
 
-        pub fn create(vm: *VM, bytes: []const u8) !*String {
+        /// Does not take ownership of the the bytes we pass int
+        pub fn copy(vm: *VM, bytes: []const u8) !*String {
+            const heapChars = try vm.allocator.alloc(u8, bytes.len);
+            std.mem.copy(u8, heapChars, bytes);
+            return allocate(vm, heapChars);
+        }
+
+        fn allocate(vm: *VM, bytes: []const u8) !*String {
             const hash = hashFn(bytes);
 
             if (vm.strings.findString(bytes, hash)) |interned| {
                 vm.allocator.free(bytes);
                 return interned;
-            } else {
-                const obj = try Obj.create(vm, String, .String);
-                const out = obj.asString();
-                out.* = String{
-                    .obj = obj.*,
-                    .hash = hash,
-                    .bytes = bytes,
-                };
-                // Make sure string is visible to the GC, since adding
-                // to the table may allocate
-                vm.push(out.obj.value());
-                _ = try vm.strings.set(out, Value.fromBool(true));
-                _ = vm.pop();
-                return out;
             }
+
+            var obj = try Obj.create(vm, String, .String);
+            const string = obj.asString();
+            string.bytes = bytes;
+            string.hash = hash;
+
+            // Add string to HashTable
+            _ = try vm.strings.set(string, Value.fromBool(true));
+
+            // Here we will push the string on the stack
+            return string;
         }
 
-        pub fn copy(vm: *VM, source: []const u8) !*String {
-            const buffer = try vm.allocator.alloc(u8, source.len);
-            std.mem.copy(u8, buffer, source);
-            return String.create(vm, buffer);
-        }
         pub fn destroy(self: *String, vm: *VM) void {
             vm.allocator.free(self.bytes);
             vm.allocator.destroy(self);
+        }
+
+        /// Takes ownership of bytes
+        pub fn take(vm: *VM, bytes: []const u8) !*String {
+            return allocate(vm, bytes);
         }
 
         // This is the FNV-1a has function
@@ -176,7 +147,6 @@ pub const Obj = struct {
     pub const Function = struct {
         obj: Obj,
         arity: u8,
-        upvalueCount: u8,
         chunk: Chunk,
         name: ?*Obj.String,
 
@@ -186,7 +156,6 @@ pub const Obj = struct {
             func.* = Function{
                 .obj = obj.*,
                 .arity = 0,
-                .upvalueCount = 0,
                 .name = null,
                 .chunk = Chunk.init(vm.allocator),
             };
@@ -196,80 +165,6 @@ pub const Obj = struct {
 
         pub fn destroy(self: *Function, vm: *VM) void {
             self.chunk.deinit();
-            vm.allocator.destroy(self);
-        }
-    };
-
-    pub const Native = struct {
-        obj: Obj,
-        name: *Obj.String,
-        function: *const Fn,
-
-        pub const Fn = fn (vm: *VM, args: []Value) error{RuntimeError}!Value;
-
-        pub fn create(vm: *VM, name: *Obj.String, function: *const Fn) !*Native {
-            const obj = try Obj.create(vm, Native, .Native);
-            const native = obj.asNative();
-            native.* = Native{
-                .obj = obj.*,
-                .name = name,
-                .function = function,
-            };
-
-            return native;
-        }
-
-        pub fn destroy(self: *Native, vm: *VM) void {
-            vm.allocator.destroy(self);
-        }
-    };
-
-    pub const Closure = struct {
-        obj: Obj,
-        function: *Function,
-        upvalues: []?*Upvalue,
-
-        pub fn create(vm: *VM, function: *Function) !*Closure {
-            const upvalues = try vm.allocator.alloc(?*Upvalue, function.upvalueCount);
-            for (upvalues) |*upvalue| upvalue.* = null;
-
-            const obj = try Obj.create(vm, Closure, .Closure);
-            const closure = obj.asClosure();
-            closure.* = Closure{
-                .obj = obj.*,
-                .function = function,
-                .upvalues = upvalues,
-            };
-
-            return closure;
-        }
-
-        pub fn destroy(self: *Closure, vm: *VM) void {
-            vm.allocator.destroy(self);
-        }
-    };
-
-    pub const Upvalue = struct {
-        obj: Obj,
-        location: *Value,
-        closed: Value,
-        next: ?*Upvalue,
-
-        pub fn create(vm: *VM, location: *Value, next: ?*Upvalue) !*Upvalue {
-            _ = next;
-            const obj = try Obj.create(vm, Upvalue, .Upvalue);
-            const upvalue = obj.asUpvalue();
-            upvalue.* = Upvalue{
-                .obj = obj.*,
-                .location = location,
-                .closed = Value.nil(),
-                .next = null,
-            };
-
-            return upvalue;
-        }
-
-        pub fn destroy(self: *Upvalue, vm: *VM) void {
             vm.allocator.destroy(self);
         }
     };

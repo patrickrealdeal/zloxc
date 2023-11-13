@@ -15,8 +15,6 @@ pub const OpCode = enum(u8) {
     SET_LOCAL,
     GET_GLOBAL,
     SET_GLOBAL,
-    SetUpvalue,
-    GetUpvalue,
     EQUAL,
     GREATER,
     LESS,
@@ -31,7 +29,6 @@ pub const OpCode = enum(u8) {
     JUMP_IF_FALSE,
     LOOP,
     CALL,
-    CLOSURE,
     RETURN, // return from current function
 };
 
@@ -88,7 +85,7 @@ pub const Chunk = struct {
         }
     }
 
-    pub fn disassembleInstruction(self: *Chunk, offset: usize) usize {
+    fn disassembleInstruction(self: *Chunk, offset: usize) usize {
         std.debug.print("{:0>4} ", .{offset});
 
         // Print line
@@ -121,35 +118,11 @@ pub const Chunk = struct {
             .SET_GLOBAL => self.constantInstruction("SET_GLOBAL", offset),
             .GET_LOCAL => self.byteInstruction("GET_LOCAL", offset),
             .SET_LOCAL => self.byteInstruction("SET_LOCAL", offset),
-            .GetUpvalue => return self.byteInstruction("GetUpvalue", offset),
-            .SetUpvalue => return self.byteInstruction("SetUpvalue", offset),
             .JUMP => self.jumpInstruction("JUMP", 1, offset),
             .JUMP_IF_FALSE => self.jumpInstruction("JUMP_IF_FALSE", 1, offset),
             .LOOP => self.jumpInstruction("LOOP", -1, offset),
             .CALL => self.byteInstruction("CALL", offset),
-            .CLOSURE => self.closureInstruction("CLOSURE", offset),
         };
-    }
-
-    fn closureInstruction(self: *Chunk, name: []const u8, initialOffset: usize) usize {
-        var offset = initialOffset + 1;
-        const constant = self.code.items[offset];
-        offset += 1;
-        std.debug.print("{s} {d} {any}\n", .{ name, constant, self.constants.items[constant] });
-
-        // Disassemble upvalues
-        const function = self.constants.items[constant].asObj().asFunction();
-        var i: usize = 0;
-        while (i < function.upvalueCount) : (i += 1) {
-            const isLocal = self.code.items[offset] != 1;
-            const valueType = if (isLocal) "local" else "upvalue";
-            offset += 1;
-            const index = self.code.items[offset];
-            offset += 1;
-            std.debug.print("{d} | {s} {d}\n", .{ offset - 2, valueType, index });
-        }
-
-        return offset;
     }
 
     fn byteInstruction(self: *Chunk, name: []const u8, offset: usize) usize {
