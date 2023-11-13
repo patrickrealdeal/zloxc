@@ -221,8 +221,8 @@ const Parser = struct {
     // Semantically, an expression statement evaluates the expression and discards the result.
     fn expressionStatement(self: *Parser) void {
         self.expression();
-        self.emitOp(.POP);
         self.consume(.SEMICOLON, "Expect ';' after expression.");
+        self.emitOp(.POP);
     }
 
     fn ifStatement(self: *Parser) void {
@@ -273,7 +273,7 @@ const Parser = struct {
         } else if (self.match(.VAR)) {
             self.varDeclaration();
         } else {
-            self.expression();
+            self.expressionStatement();
         }
 
         var loopStart = self.currentChunk().code.items.len;
@@ -435,8 +435,6 @@ const Parser = struct {
 
     fn endCompiler(self: *Parser) !*Obj.Function {
         self.emitReturn();
-
-        // if (self.hadError) return error.CompileError;
 
         if (!self.hadError and debug.trace_parser) {
             const name = if (self.compiler.function.name) |o| o.bytes else "<script>";

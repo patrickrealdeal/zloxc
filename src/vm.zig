@@ -103,15 +103,13 @@ pub const VM = struct {
 
         self.push(func.obj.value());
         try self.call(func, 0);
-
         _ = self.pop();
 
         if (debug.trace_parser) {
-            std.debug.print("STACK: {any}\n", .{self.stack.items});
+            self.printStack();
         }
 
         const result = self.run();
-
         return result;
     }
 
@@ -164,11 +162,11 @@ pub const VM = struct {
                 const name = self.currentFrame().readString();
                 const value = self.peek(0);
                 _ = try self.globals.set(name, value);
+                _ = self.pop();
                 // NOTE: that we don’t pop the value until after we add it to the hash table.
                 // That ensures the VM can still find the value if a garbage collection is
                 // triggered right in the middle of adding it to the hash table.
                 // That’s a distinct possibility since the hash table requires dynamic allocation when it resizes.
-                _ = self.pop();
             },
             .GET_GLOBAL => {
                 const name = self.currentFrame().readString();
@@ -218,6 +216,8 @@ pub const VM = struct {
                 if (self.frames.items.len == 0) return;
 
                 try self.stack.resize(frame.start);
+                _ = self.pop();
+                self.printStack();
                 self.push(result);
             },
         }
@@ -247,7 +247,7 @@ pub const VM = struct {
         try self.frames.append(CallFrame{
             .function = func,
             .ip = func.chunk.ptr(),
-            .start = @as(u32, @intCast(self.stack.items.len)) - arg_count - 1,
+            .start = @as(u32, @intCast(self.stack.items.len)) - arg_count,
         });
     }
 

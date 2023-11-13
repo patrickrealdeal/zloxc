@@ -1,37 +1,33 @@
-var breakfast = "beignets";
-var beverage = "cafe au lait";
-breakfast = "beignets with " + beverage;
-
-var c = 6;
-{
-  var a = 2;
-  {
-    var b = 2;
-    print a + b;    
-  }
-}
-
-print breakfast;
-
-if (c > 10) {
-	print c;
+if (5 == 5) {
+  print "hello from IF";
 } else {
-	print "c is greater than 10";
+  print "NOPE!";
 }
 
 var i = 0;
-while (i < 2) {
-	print "Hello, from 'while'";
-	i = i + 1;
+while (i < 3) {
+  print "while";
+  i = i + 1;
 }
 
-for (var i = 0; i < 3; i = i + 1) {
-	print "Hello, from 'for'";
+var j;
+for (j = 0; j < 3; j = j + 1) {
+   print "for";
 }
 
-fun areWeHavingItYet(a, b) {
-   print (a + b);
+fun hello(a,b,c) {
+  return a + b - c;
 }
 
-areWeHavingItYet(1,1);
+fun hello_(name) {
+  print "hello " + name;
+}
 
+fun sum(a, b, c) {
+  return a + b + c;
+}
+
+print 4 + sum(5, 6, 7);
+
+print hello(1,2,4);
+hello_("Jean");
