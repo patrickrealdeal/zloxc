@@ -206,7 +206,9 @@ pub const VM = struct {
             },
             .CALL => {
                 const arg_count = self.currentFrame().readByte();
-                std.debug.print("ARG_COUNT: {}\n", .{arg_count});
+                if (debug.trace_parser) {
+                    std.debug.print("ARG_COUNT: {}\n", .{arg_count});
+                }
                 try self.callValue(self.peek(arg_count), arg_count);
             },
             .RETURN => {
@@ -217,7 +219,7 @@ pub const VM = struct {
 
                 try self.stack.resize(frame.start);
                 _ = self.pop();
-                self.printStack();
+                if (debug.trace_parser) self.printStack();
                 self.push(result);
             },
         }

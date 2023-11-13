@@ -1,3 +1,12 @@
+var n = 2;
+{
+  n = n + 2;
+  var n2 = 4;
+  print n + n2;
+}
+print n;
+
+
 if (5 == 5) {
   print "hello from IF";
 } else {
