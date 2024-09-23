@@ -4,6 +4,10 @@ const Value = @import("value.zig").Value;
 pub const OpCode = enum(usize) {
     constant,
     negate,
+    add,
+    sub,
+    mul,
+    div,
     ret,
 };
 
@@ -51,13 +55,17 @@ pub const Chunk = struct {
         if (offset > 0 and self.lines.items[offset] == self.lines.items[offset - 1]) {
             std.debug.print("    | ", .{});
         } else {
-            std.debug.print("{d:4} ", .{self.lines.items[offset]});
+            std.debug.print(" {d:4} ", .{self.lines.items[offset]});
         }
 
         const instruction: OpCode = @enumFromInt(self.code.items[offset]);
         switch (instruction) {
             .constant => return constantInstruction("op_constant", self, offset),
             .negate => return simpleInstruction("op_negate", offset),
+            .add => return simpleInstruction("op_add", offset),
+            .sub => return simpleInstruction("op_sub", offset),
+            .mul => return simpleInstruction("op_mul", offset),
+            .div => return simpleInstruction("op_div", offset),
             .ret => return simpleInstruction("op_ret", offset),
         }
 
@@ -71,7 +79,7 @@ pub const Chunk = struct {
 
     fn constantInstruction(name: []const u8, chunk: *Chunk, offset: usize) usize {
         const constant = chunk.code.items[offset + 1];
-        std.debug.print(" {s: <16} {d:4} '", .{ name, constant });
+        std.debug.print("{s: <16} {d:4} '", .{ name, constant });
         std.debug.print("{d}'\n", .{chunk.constants.items[constant]});
         return offset + 2;
     }

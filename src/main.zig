@@ -11,14 +11,24 @@ pub fn main() !void {
     var chunk = Chunk.init(allocator);
     defer chunk.deinit();
 
-    const constant: u8 = @intCast(try chunk.addConstant(1.2));
+    var constant: u8 = @intCast(try chunk.addConstant(3.0));
     try chunk.write(@intFromEnum(OpCode.constant), 123);
     try chunk.write(constant, 123);
 
+    constant = @intCast(try chunk.addConstant(1));
+    try chunk.write(@intFromEnum(OpCode.constant), 123);
+    try chunk.write(constant, 123);
+
+    try chunk.write(@intFromEnum(OpCode.add), 123);
+
+    constant = @intCast(try chunk.addConstant(2));
+    try chunk.write(@intFromEnum(OpCode.constant), 123);
+    try chunk.write(constant, 123);
+
+    try chunk.write(@intFromEnum(OpCode.div), 123);
     try chunk.write(@intFromEnum(OpCode.negate), 123);
 
     try chunk.write(@intFromEnum(OpCode.ret), 123);
-    // chunk.disassemble("test chunk");
 
     var vm = VM.init(&chunk);
     try vm.interpret();

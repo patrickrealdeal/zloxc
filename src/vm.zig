@@ -43,6 +43,10 @@ pub const VM = struct {
                     try self.push(constant);
                 },
                 .negate => self.stack[self.stack_top - 1] = -self.stack[self.stack_top - 1],
+                .add => try self.binaryOp(.add),
+                .sub => try self.binaryOp(.sub),
+                .mul => try self.binaryOp(.mul),
+                .div => try self.binaryOp(.div),
                 .ret => {
                     std.debug.print("\n{d}\n", .{self.pop()});
                     return;
@@ -69,6 +73,21 @@ pub const VM = struct {
     fn pop(self: *VM) Value {
         self.stack_top -= 1;
         return self.stack[self.stack_top];
+    }
+
+    const BinaryOp = enum { add, sub, mul, div };
+
+    fn binaryOp(self: *VM, op: BinaryOp) !void {
+        const b = self.pop();
+        const a = self.pop();
+        const result = switch (op) {
+            .add => a + b,
+            .sub => a - b,
+            .mul => a * b,
+            .div => a / b,
+        };
+
+        try self.push(result);
     }
 
     inline fn traceStackExecution(self: *VM) void {
