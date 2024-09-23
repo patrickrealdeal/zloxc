@@ -1,35 +1,57 @@
 const std = @import("std");
-const Chunk = @import("chunk.zig").Chunk;
-const OpCode = @import("chunk.zig").OpCode;
-const VM = @import("vm.zig").VM;
 
-pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+const errout = std.io.getStdErr().writer();
+const stdout = std.io.getStdOut().writer();
+const stdin = std.io.getStdIn().reader();
 
-    var chunk = Chunk.init(allocator);
-    defer chunk.deinit();
+pub fn main() !u8 {
+    const args = try std.process.argsAlloc(std.heap.page_allocator);
 
-    var constant: u8 = @intCast(try chunk.addConstant(3.0));
-    try chunk.write(@intFromEnum(OpCode.constant), 123);
-    try chunk.write(constant, 123);
+    switch (args.len) {
+        1 => repl(),
+        2 => runFile(args[1], std.heap.page_allocator),
+        else => {
+            errout.print("Usage zloxc [path]\n", .{}) catch {};
+            return std.process.exit(64);
+        },
+    }
 
-    constant = @intCast(try chunk.addConstant(1));
-    try chunk.write(@intFromEnum(OpCode.constant), 123);
-    try chunk.write(constant, 123);
+    return 0;
+}
 
-    try chunk.write(@intFromEnum(OpCode.add), 123);
+fn repl() void {
+    var buf = std.io.bufferedReader(stdin);
+    var reader = buf.reader();
+    var line_buf: [1024]u8 = undefined;
 
-    constant = @intCast(try chunk.addConstant(2));
-    try chunk.write(@intFromEnum(OpCode.constant), 123);
-    try chunk.write(constant, 123);
+    while (true) {
+        stdout.writeAll("> ") catch std.debug.panic("Couldn't write to stdout!\n", .{});
+        var line = reader.readUntilDelimiterOrEof(&line_buf, '\n') catch {
+            std.debug.panic("Couldn't read from stdin!\n", .{});
+        } orelse {
+            stdout.writeAll("\n") catch std.debug.panic("Couldn't write to stdout!\n", .{});
+            break;
+        };
+        std.debug.print("{s}\n", .{line});
+    }
+}
 
-    try chunk.write(@intFromEnum(OpCode.div), 123);
-    try chunk.write(@intFromEnum(OpCode.negate), 123);
+fn runFile(filename: []const u8, allocator: std.mem.Allocator) void {
+    const source = readFile(filename, allocator);
+    defer allocator.free(source);
 
-    try chunk.write(@intFromEnum(OpCode.ret), 123);
+    std.debug.print("FILE CONTENTS: {s}\n", .{source});
+}
 
-    var vm = VM.init(&chunk);
-    try vm.interpret();
+fn readFile(path: []const u8, allocator: std.mem.Allocator) []const u8 {
+    const file = std.fs.cwd().openFile(path, .{ .read = true }) catch |err| {
+        errout.print("Could not open file \"{s}\". error {any}\n", .{ path, err }) catch {};
+        std.process.exit(74);
+    };
+    defer file.close();
+
+    return file.readToEndAlloc(allocator, 100000) catch |err| {
+        errout.print("Could not read file \"{s}\", error: {any}\n", .{ path, err }) catch {};
+        std.process.exit(74);
+    };
 }
