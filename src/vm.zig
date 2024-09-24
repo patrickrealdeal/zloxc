@@ -2,9 +2,10 @@ const std = @import("std");
 const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("chunk.zig").OpCode;
 const Value = @import("value.zig").Value;
+const compiler = @import("compiler.zig");
 
-const trace_execution = true;
-const trace_stack = true;
+const debug_trace_execution = false;
+const debug_trace_stack = false;
 const stack_max = 256;
 
 pub const VM = struct {
@@ -12,27 +13,37 @@ pub const VM = struct {
     ip: [*]u8,
     stack: [stack_max]Value,
     stack_top: usize,
+    allocator: std.mem.Allocator,
 
-    pub fn init(chunk: *Chunk) VM {
+    pub fn init(allocator: std.mem.Allocator) VM {
         return VM{
-            .chunk = chunk,
-            .ip = chunk.code.items.ptr,
+            .chunk = undefined,
+            .ip = undefined,
             .stack = std.mem.zeroes([stack_max]Value),
             .stack_top = 0,
+            .allocator = allocator,
         };
     }
 
-    pub fn interpret(self: *VM) !void {
+    pub fn interpret(self: *VM, source: []const u8) !void {
+        var chunk = Chunk.init(self.allocator);
+        defer chunk.deinit();
+
+        std.debug.print("SOURCE: {s}\n", .{source});
+        try compiler.compile(source, &chunk);
+        self.chunk = &chunk;
+        self.ip = self.chunk.code.items.ptr;
+
         try self.run();
     }
 
     fn run(self: *VM) !void {
         while (true) {
-            if (comptime trace_execution) {
+            if (comptime debug_trace_execution) {
                 _ = Chunk.disassembleInstruction(self.chunk, @intFromPtr(self.ip - @intFromPtr(self.chunk.code.items.ptr)));
             }
 
-            if (comptime trace_stack) {
+            if (comptime debug_trace_stack) {
                 self.traceStackExecution();
             }
 
