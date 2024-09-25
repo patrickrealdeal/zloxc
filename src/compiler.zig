@@ -66,31 +66,31 @@ fn getRule(ttype: TokenType) ParseRule {
         .semicolon => ParseRule.init(null, null, .prec_none),
         .slash => ParseRule.init(null, Parser.binary, .prec_factor),
         .star => ParseRule.init(null, Parser.binary, .prec_factor),
-        .bang => ParseRule.init(null, null, .prec_none),
-        .bang_equal => ParseRule.init(null, null, .prec_none),
+        .bang => ParseRule.init(Parser.unary, null, .prec_none),
+        .bang_equal => ParseRule.init(null, Parser.binary, .prec_equality),
         .equal => ParseRule.init(null, null, .prec_none),
-        .equal_equal => ParseRule.init(null, null, .prec_none),
-        .greater => ParseRule.init(null, null, .prec_none),
-        .greater_equal => ParseRule.init(null, null, .prec_none),
-        .less => ParseRule.init(null, null, .prec_none),
-        .less_equal => ParseRule.init(null, null, .prec_none),
+        .equal_equal => ParseRule.init(null, Parser.binary, .prec_equality),
+        .greater => ParseRule.init(null, Parser.binary, .prec_comparison),
+        .greater_equal => ParseRule.init(null, Parser.binary, .prec_comparison),
+        .less => ParseRule.init(null, Parser.binary, .prec_comparison),
+        .less_equal => ParseRule.init(null, Parser.binary, .prec_comparison),
         .identifier => ParseRule.init(null, null, .prec_none),
         .string => ParseRule.init(null, null, .prec_none),
         .number => ParseRule.init(Parser.number, null, .prec_none),
         .keyword_and => ParseRule.init(null, null, .prec_none),
         .keyword_class => ParseRule.init(null, null, .prec_none),
         .keyword_else => ParseRule.init(null, null, .prec_none),
-        .keyword_false => ParseRule.init(null, null, .prec_none),
+        .keyword_false => ParseRule.init(Parser.literal, null, .prec_none),
         .keyword_for => ParseRule.init(null, null, .prec_none),
         .keyword_fun => ParseRule.init(null, null, .prec_none),
         .keyword_if => ParseRule.init(null, null, .prec_none),
-        .keyword_nil => ParseRule.init(null, null, .prec_none),
+        .keyword_nil => ParseRule.init(Parser.literal, null, .prec_none),
         .keyword_or => ParseRule.init(null, null, .prec_none),
         .keyword_print => ParseRule.init(null, null, .prec_none),
         .keyword_return => ParseRule.init(null, null, .prec_none),
         .keyword_super => ParseRule.init(null, null, .prec_none),
         .keyword_this => ParseRule.init(null, null, .prec_none),
-        .keyword_true => ParseRule.init(null, null, .prec_none),
+        .keyword_true => ParseRule.init(Parser.literal, null, .prec_none),
         .keyword_var => ParseRule.init(null, null, .prec_none),
         .keyword_while => ParseRule.init(null, null, .prec_none),
         .err => ParseRule.init(null, null, .prec_none),
@@ -164,12 +164,21 @@ const Parser = struct {
 
     fn number(self: *Parser) !void {
         const value = std.fmt.parseFloat(f64, self.previous.lexeme) catch unreachable;
-        try self.emitConstant(value);
+        try self.emitConstant(Value{ .number = value });
     }
 
     fn grouping(self: *Parser) !void {
         try self.expression();
         try self.consume(.right_paren, "expected ')' after expression");
+    }
+
+    fn literal(self: *Parser) !void {
+        switch (self.previous.ttype) {
+            .keyword_false => self.emitByte(@intFromEnum(OpCode.false)),
+            .keyword_true => self.emitByte(@intFromEnum(OpCode.true)),
+            .keyword_nil => self.emitByte(@intFromEnum(OpCode.nil)),
+            else => unreachable,
+        }
     }
 
     fn unary(self: *Parser) !void {
@@ -180,6 +189,7 @@ const Parser = struct {
 
         switch (optype) {
             .minus => self.emitByte(@intFromEnum(OpCode.negate)),
+            .bang => self.emitByte(@intFromEnum(OpCode.not)),
             else => unreachable,
         }
     }
@@ -194,6 +204,12 @@ const Parser = struct {
             .minus => self.emitByte(@intFromEnum(OpCode.sub)),
             .star => self.emitByte(@intFromEnum(OpCode.mul)),
             .slash => self.emitByte(@intFromEnum(OpCode.div)),
+            .bang_equal => self.emitBytes(@intFromEnum(OpCode.equal), @intFromEnum(OpCode.not)),
+            .equal_equal => self.emitByte(@intFromEnum(OpCode.equal)),
+            .greater => self.emitByte(@intFromEnum(OpCode.greater)),
+            .greater_equal => self.emitBytes(@intFromEnum(OpCode.less), @intFromEnum(OpCode.not)),
+            .less => self.emitByte(@intFromEnum(OpCode.less)),
+            .less_equal => self.emitBytes(@intFromEnum(OpCode.greater), @intFromEnum(OpCode.not)),
             else => unreachable,
         }
     }

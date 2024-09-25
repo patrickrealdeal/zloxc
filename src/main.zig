@@ -15,7 +15,7 @@ pub fn main() !u8 {
 
     switch (args.len) {
         1 => try repl(&vm),
-        2 => try runFile(&vm, args[1], std.heap.page_allocator),
+        2 => try runFile(&vm, args[1], allocator),
         else => {
             errout.print("Usage zloxc [path]\n", .{}) catch {};
             return std.process.exit(64);
@@ -36,6 +36,7 @@ fn repl(vm: *VM) !void {
             try stdout.writeAll("\n");
             break;
         };
+        if (line.len == 0) continue;
 
         try vm.interpret(line);
     }

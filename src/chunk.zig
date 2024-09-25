@@ -8,6 +8,13 @@ pub const OpCode = enum(usize) {
     sub,
     mul,
     div,
+    nil,
+    true,
+    false,
+    not,
+    equal,
+    greater,
+    less,
     ret,
 };
 
@@ -66,6 +73,13 @@ pub const Chunk = struct {
             .sub => return simpleInstruction("op_sub", offset),
             .mul => return simpleInstruction("op_mul", offset),
             .div => return simpleInstruction("op_div", offset),
+            .true => return simpleInstruction("op_true", offset),
+            .false => return simpleInstruction("op_false", offset),
+            .nil => return simpleInstruction("op_nil", offset),
+            .not => return simpleInstruction("op_not", offset),
+            .equal => return simpleInstruction("op_equal", offset),
+            .greater => return simpleInstruction("op_greater", offset),
+            .less => return simpleInstruction("op_less", offset),
             .ret => return simpleInstruction("op_ret", offset),
         }
 
@@ -80,7 +94,8 @@ pub const Chunk = struct {
     fn constantInstruction(name: []const u8, chunk: *Chunk, offset: usize) usize {
         const constant = chunk.code.items[offset + 1];
         std.debug.print("{s: <16} {d:4} '", .{ name, constant });
-        std.debug.print("{d}'\n", .{chunk.constants.items[constant]});
+        Value.printValue(chunk.constants.items[constant]);
+        std.debug.print("'\n", .{});
         return offset + 2;
     }
 };

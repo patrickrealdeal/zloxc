@@ -17,9 +17,8 @@ pub const Scanner = struct {
 
     pub fn scanToken(self: *Scanner) ?Token {
         self.skipWhitespace();
-        self.start = self.current;
-
         if (self.isAtEnd()) return null;
+        self.start = self.current;
 
         const c = self.advance();
         if (std.ascii.isAlphabetic(c)) return self.identifier();
@@ -127,7 +126,7 @@ pub const Scanner = struct {
     }
 
     fn identifierType(self: *Scanner) TokenType {
-        return switch (self.source[self.current]) {
+        return switch (self.source[self.start]) {
             'a' => self.checkKeyword("and", .keyword_and),
             'c' => self.checkKeyword("class", .keyword_class),
             'e' => self.checkKeyword("else", .keyword_else),

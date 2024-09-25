@@ -10,7 +10,7 @@ const stack_max = 256;
 
 pub const VM = struct {
     chunk: *Chunk,
-    ip: [*]u8,
+    ip: usize,
     stack: [stack_max]Value,
     stack_top: usize,
     allocator: std.mem.Allocator,
@@ -18,8 +18,8 @@ pub const VM = struct {
     pub fn init(allocator: std.mem.Allocator) VM {
         return VM{
             .chunk = undefined,
-            .ip = undefined,
-            .stack = std.mem.zeroes([stack_max]Value),
+            .ip = 0,
+            .stack = undefined,
             .stack_top = 0,
             .allocator = allocator,
         };
@@ -32,15 +32,19 @@ pub const VM = struct {
         std.debug.print("SOURCE: {s}\n", .{source});
         try compiler.compile(source, &chunk);
         self.chunk = &chunk;
-        self.ip = self.chunk.code.items.ptr;
+        self.ip = 0;
 
         try self.run();
+    }
+
+    fn resetStack(self: *VM) void {
+        self.stack_top = 0;
     }
 
     fn run(self: *VM) !void {
         while (true) {
             if (comptime debug_trace_execution) {
-                _ = Chunk.disassembleInstruction(self.chunk, @intFromPtr(self.ip - @intFromPtr(self.chunk.code.items.ptr)));
+                _ = Chunk.disassembleInstruction(self.chunk, self.ip);
             }
 
             if (comptime debug_trace_stack) {
@@ -53,13 +57,30 @@ pub const VM = struct {
                     const constant = self.readConstant();
                     try self.push(constant);
                 },
-                .negate => self.stack[self.stack_top - 1] = -self.stack[self.stack_top - 1],
+                .negate => {
+                    if (self.peek(0) != .number) {
+                        self.runtimeErr("Operand must be a number!", .{});
+                    }
+                    self.stack[self.stack_top - 1].number = -self.stack[self.stack_top - 1].number;
+                },
                 .add => try self.binaryOp(.add),
                 .sub => try self.binaryOp(.sub),
                 .mul => try self.binaryOp(.mul),
                 .div => try self.binaryOp(.div),
+                .true => try self.push(Value{ .bool = true }),
+                .false => try self.push(Value{ .bool = false }),
+                .nil => try self.push(Value.nil),
+                .not => try self.push(Value{ .bool = isFalsey(self.pop()) }),
+                .equal => {
+                    const b = self.pop();
+                    const a = self.pop();
+                    try self.push(Value{ .bool = Value.eq(a, b) });
+                },
+                .greater => try self.binaryOp(.gt),
+                .less => try self.binaryOp(.lt),
                 .ret => {
-                    std.debug.print("\n{d}\n", .{self.pop()});
+                    Value.printValue(self.pop());
+                    std.debug.print("\n", .{});
                     return;
                 },
             }
@@ -67,7 +88,7 @@ pub const VM = struct {
     }
 
     fn readByte(self: *VM) usize {
-        const byte = self.ip[0];
+        const byte = self.chunk.code.items[self.ip];
         self.ip += 1;
         return byte;
     }
@@ -86,28 +107,59 @@ pub const VM = struct {
         return self.stack[self.stack_top];
     }
 
-    const BinaryOp = enum { add, sub, mul, div };
+    fn isFalsey(value: Value) bool {
+        return switch (value) {
+            .nil => true,
+            .bool => |b| !b,
+            else => false,
+        };
+    }
+
+    const BinaryOp = enum { add, sub, mul, div, gt, lt };
 
     fn binaryOp(self: *VM, op: BinaryOp) !void {
-        const b = self.pop();
-        const a = self.pop();
+        if (self.peek(0) != .number or self.peek(1) != .number) {
+            self.runtimeErr("Operands must be numbers", .{});
+            return InterpretError.RuntimeError;
+        }
+
+        const b = self.pop().number;
+        const a = self.pop().number;
         const result = switch (op) {
-            .add => a + b,
-            .sub => a - b,
-            .mul => a * b,
-            .div => a / b,
+            .add => Value{ .number = a + b },
+            .sub => Value{ .number = a - b },
+            .mul => Value{ .number = a * b },
+            .div => Value{ .number = a / b },
+            .gt => Value{ .bool = a > b },
+            .lt => Value{ .bool = a < b },
         };
 
         try self.push(result);
+        //switch (@TypeOf(result)) {
+        //    bool => try self.push(Value{ .boolean = result }),
+        //    f64 => try self.push(Value{ .number = result }),
+        //    else => unreachable,
+        //}
+    }
+
+    fn peek(self: *VM, distance: usize) Value {
+        return self.stack[self.stack_top - distance - 1];
     }
 
     inline fn traceStackExecution(self: *VM) void {
         std.debug.print("       ", .{});
         var i: usize = 0;
         while (i < self.stack_top) : (i += 1) {
-            std.debug.print("[ {d} ]", .{self.stack[i]});
+            std.debug.print("[ {} ]", .{Value.printValue(self.stack[i])});
         }
         std.debug.print("\n", .{});
+    }
+
+    fn runtimeErr(self: *VM, comptime fmt: []const u8, args: anytype) void {
+        const errWriter = std.io.getStdErr().writer();
+        errWriter.print(fmt ++ "\n", args) catch {};
+        errWriter.print("[line {d}] in script.\n", .{self.chunk.lines.items[self.ip]}) catch {};
+        self.resetStack();
     }
 };
 
