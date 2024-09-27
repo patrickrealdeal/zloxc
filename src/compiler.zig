@@ -53,7 +53,7 @@ const ParseRule = struct {
     }
 };
 
-fn getRule(ttype: TokenType) ParseRule {
+inline fn getRule(ttype: TokenType) ParseRule {
     return switch (ttype) {
         .left_paren => ParseRule.init(Parser.grouping, null, .prec_none),
         .right_paren => ParseRule.init(null, null, .prec_none),

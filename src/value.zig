@@ -1,12 +1,12 @@
 const std = @import("std");
 
-const ValueType = enum {
+pub const Tag = enum {
     bool,
     number,
     nil,
 };
 
-pub const Value = union(ValueType) {
+pub const Value = union(Tag) {
     bool: bool,
     number: f64,
     nil,
@@ -19,16 +19,22 @@ pub const Value = union(ValueType) {
         }
     }
 
+    /// Inspired by zigs own implementaion of std.meta.eql, clean
     pub fn eq(a: Value, b: Value) bool {
-        const at = @as(ValueType, a);
-        const bt = @as(ValueType, b);
+        const info = @typeInfo(@TypeOf(a)).@"union";
+        const at = std.meta.activeTag(a);
+        const bt = std.meta.activeTag(b);
         if (at != bt) return false;
 
-        return switch (a) {
-            .number => |n| n == b.number,
-            .bool => |b1| b1 == b.bool,
-            .nil => true,
-        };
+        inline for (info.fields) |field_info| {
+            if (@field(info.tag_type.?, field_info.name) == at) {
+                // std.meta.eql first compares Tag the recursevly compares values if Tag is eql
+                return std.meta.eql(@field(a, field_info.name), @field(b, field_info.name));
+            }
+        }
+        // When using `inline for` the compiler doesn't know that every
+        // possible case has been handled requiring an explicit `unreachable`.
+        unreachable;
     }
 };
 

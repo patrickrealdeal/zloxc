@@ -135,11 +135,6 @@ pub const VM = struct {
         };
 
         try self.push(result);
-        //switch (@TypeOf(result)) {
-        //    bool => try self.push(Value{ .boolean = result }),
-        //    f64 => try self.push(Value{ .number = result }),
-        //    else => unreachable,
-        //}
     }
 
     fn peek(self: *VM, distance: usize) Value {
@@ -147,12 +142,14 @@ pub const VM = struct {
     }
 
     inline fn traceStackExecution(self: *VM) void {
-        std.debug.print("       ", .{});
-        var i: usize = 0;
-        while (i < self.stack_top) : (i += 1) {
-            std.debug.print("[ {} ]", .{Value.printValue(self.stack[i])});
+        const print = std.debug.print;
+        print("          ", .{});
+        for (self.stack) |value| {
+            print("[", .{});
+            Value.printValue(value);
+            print("]", .{});
         }
-        std.debug.print("\n", .{});
+        print("\n", .{});
     }
 
     fn runtimeErr(self: *VM, comptime fmt: []const u8, args: anytype) void {
