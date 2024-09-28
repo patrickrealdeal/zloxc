@@ -3,9 +3,11 @@ const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("chunk.zig").OpCode;
 const Value = @import("value.zig").Value;
 const compiler = @import("compiler.zig");
+const Obj = @import("object.zig");
 
 const debug_trace_execution = false;
 const debug_trace_stack = false;
+const debug_gc = true;
 const stack_max = 256;
 
 pub const VM = struct {
@@ -14,6 +16,7 @@ pub const VM = struct {
     stack: [stack_max]Value,
     stack_top: usize,
     allocator: std.mem.Allocator,
+    objects: ?*Obj.Obj,
 
     pub fn init(allocator: std.mem.Allocator) VM {
         return VM{
@@ -22,7 +25,16 @@ pub const VM = struct {
             .stack = undefined,
             .stack_top = 0,
             .allocator = allocator,
+            .objects = null,
         };
+    }
+
+    pub fn deinit(self: *VM) void {
+        if (comptime debug_gc) {
+            std.debug.print("Uninitializing VM\n", .{});
+        }
+        self.resetStack();
+        self.freeObjects();
     }
 
     pub fn interpret(self: *VM, source: []const u8) !void {
@@ -30,7 +42,7 @@ pub const VM = struct {
         defer chunk.deinit();
 
         std.debug.print("SOURCE: {s}\n", .{source});
-        try compiler.compile(source, &chunk);
+        try compiler.compile(source, &chunk, self);
         self.chunk = &chunk;
         self.ip = 0;
 
@@ -115,26 +127,36 @@ pub const VM = struct {
         };
     }
 
+    fn concat(self: *VM) !void {
+        const b = self.pop().asObj().asString();
+        const a = self.pop().asObj().asString();
+        const res = try std.mem.concat(self.allocator, u8, &[_][]const u8{ a.bytes, b.bytes });
+        const str = try Obj.String.take(self, res);
+        try self.push(Value{ .obj = &str.obj });
+    }
+
     const BinaryOp = enum { add, sub, mul, div, gt, lt };
 
     fn binaryOp(self: *VM, op: BinaryOp) !void {
-        if (self.peek(0) != .number or self.peek(1) != .number) {
-            self.runtimeErr("Operands must be numbers", .{});
+        if (self.peek(0).isString() and self.peek(1).isString()) {
+            try self.concat();
+        } else if (self.peek(0).isNumber() and self.peek(1).isNumber()) {
+            const b = self.pop().number;
+            const a = self.pop().number;
+            const result = switch (op) {
+                .add => Value{ .number = a + b },
+                .sub => Value{ .number = a - b },
+                .mul => Value{ .number = a * b },
+                .div => Value{ .number = a / b },
+                .gt => Value{ .bool = a > b },
+                .lt => Value{ .bool = a < b },
+            };
+
+            try self.push(result);
+        } else {
+            self.runtimeErr("Operands must be two numbers or strings", .{});
             return InterpretError.RuntimeError;
         }
-
-        const b = self.pop().number;
-        const a = self.pop().number;
-        const result = switch (op) {
-            .add => Value{ .number = a + b },
-            .sub => Value{ .number = a - b },
-            .mul => Value{ .number = a * b },
-            .div => Value{ .number = a / b },
-            .gt => Value{ .bool = a > b },
-            .lt => Value{ .bool = a < b },
-        };
-
-        try self.push(result);
     }
 
     fn peek(self: *VM, distance: usize) Value {
@@ -157,6 +179,24 @@ pub const VM = struct {
         errWriter.print(fmt ++ "\n", args) catch {};
         errWriter.print("[line {d}] in script.\n", .{self.chunk.lines.items[self.ip]}) catch {};
         self.resetStack();
+    }
+
+    fn freeObjects(self: *VM) void {
+        var obj = self.objects;
+        var total_objects: u64 = 0;
+        while (obj) |object| {
+            if (comptime debug_gc) {
+                std.debug.print("{s}\n", .{object.asString().bytes});
+                total_objects += 1;
+            }
+            const next = object.next;
+            object.destroy(self);
+            obj = next;
+        }
+
+        if (comptime debug_gc) {
+            std.debug.print("Objects freed {d}\n", .{total_objects});
+        }
     }
 };
 

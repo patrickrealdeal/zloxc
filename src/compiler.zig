@@ -5,13 +5,15 @@ const Token = @import("scanner.zig").Token;
 const OpCode = @import("chunk.zig").OpCode;
 const Value = @import("value.zig").Value;
 const TokenType = @import("scanner.zig").TokenType;
+const Obj = @import("object.zig");
+const VM = @import("vm.zig").VM;
 
 const debug_print_code = true;
 const CompilerError = error{Compiler_Error};
 
-pub fn compile(source: []const u8, chunk: *Chunk) !void {
+pub fn compile(source: []const u8, chunk: *Chunk, vm: *VM) !void {
     var scanner = Scanner.init(source);
-    var parser = Parser.init(&scanner, chunk);
+    var parser = Parser.init(&scanner, chunk, vm);
     try parser.advance();
     try parser.expression();
 
@@ -75,7 +77,7 @@ inline fn getRule(ttype: TokenType) ParseRule {
         .less => ParseRule.init(null, Parser.binary, .prec_comparison),
         .less_equal => ParseRule.init(null, Parser.binary, .prec_comparison),
         .identifier => ParseRule.init(null, null, .prec_none),
-        .string => ParseRule.init(null, null, .prec_none),
+        .string => ParseRule.init(Parser.string, null, .prec_none),
         .number => ParseRule.init(Parser.number, null, .prec_none),
         .keyword_and => ParseRule.init(null, null, .prec_none),
         .keyword_class => ParseRule.init(null, null, .prec_none),
@@ -104,14 +106,16 @@ const Parser = struct {
     scanner: *Scanner,
     compiling_chunk: *Chunk,
     panic_mode: bool,
+    vm: *VM,
 
-    pub fn init(scanner: *Scanner, chunk: *Chunk) Parser {
+    pub fn init(scanner: *Scanner, chunk: *Chunk, vm: *VM) Parser {
         return .{
             .current = undefined,
             .previous = undefined,
             .scanner = scanner,
             .compiling_chunk = chunk,
             .panic_mode = false,
+            .vm = vm,
         };
     }
 
@@ -170,6 +174,13 @@ const Parser = struct {
     fn grouping(self: *Parser) !void {
         try self.expression();
         try self.consume(.right_paren, "expected ')' after expression");
+    }
+
+    fn string(self: *Parser) !void {
+        const bytes_len = self.previous.lexeme.len;
+        // discards '""'
+        const str = try Obj.String.copy(self.vm, self.previous.lexeme[1 .. bytes_len - 1]);
+        try self.emitConstant(Value{ .obj = &str.obj });
     }
 
     fn literal(self: *Parser) !void {

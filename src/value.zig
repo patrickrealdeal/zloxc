@@ -1,40 +1,58 @@
 const std = @import("std");
+const Obj = @import("object.zig").Obj;
 
 pub const Tag = enum {
     bool,
     number,
+    obj,
     nil,
 };
 
 pub const Value = union(Tag) {
     bool: bool,
     number: f64,
+    obj: *Obj,
     nil,
 
     pub fn printValue(self: Value) void {
         switch (self) {
             .bool => |b| std.debug.print("{any}", .{b}),
             .number => |n| std.debug.print("{d}", .{n}),
+            .obj => |obj| std.debug.print("{s}", .{obj.asString().bytes}),
             .nil => std.debug.print("nil", .{}),
         }
     }
 
-    /// Inspired by zigs own implementaion of std.meta.eql, clean
-    pub fn eq(a: Value, b: Value) bool {
-        const info = @typeInfo(@TypeOf(a)).@"union";
-        const at = std.meta.activeTag(a);
-        const bt = std.meta.activeTag(b);
-        if (at != bt) return false;
+    pub fn asObj(self: Value) *Obj {
+        std.debug.assert(std.meta.activeTag(self) == .obj);
+        return self.obj;
+    }
 
-        inline for (info.fields) |field_info| {
-            if (@field(info.tag_type.?, field_info.name) == at) {
-                // std.meta.eql first compares Tag the recursevly compares values if Tag is eql
-                return std.meta.eql(@field(a, field_info.name), @field(b, field_info.name));
-            }
+    pub fn isObj(self: Value) bool {
+        return self == .obj;
+    }
+
+    pub fn asNumber(self: Value) f64 {
+        std.debug.assert(std.meta.activeTag(self) == .number);
+        return self.number;
+    }
+
+    pub fn isNumber(self: Value) bool {
+        return self == .number;
+    }
+
+    pub fn isString(self: Value) bool {
+        return self.isObj() and self.asObj().is(.string);
+    }
+
+    pub fn eq(a: Value, b: Value) bool {
+        if (std.meta.activeTag(a) == .obj and std.meta.activeTag(b) == .obj) {
+            return std.mem.eql(u8, a.obj.asString().bytes, b.obj.asString().bytes);
         }
-        // When using `inline for` the compiler doesn't know that every
-        // possible case has been handled requiring an explicit `unreachable`.
-        unreachable;
+
+        // std.meta.eql checks Tag equality
+        // and if present compares values
+        return std.meta.eql(a, b);
     }
 };
 

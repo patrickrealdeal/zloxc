@@ -12,6 +12,7 @@ pub fn main() !u8 {
     const args = try std.process.argsAlloc(allocator);
 
     var vm = VM.init(allocator);
+    defer vm.deinit();
 
     switch (args.len) {
         1 => try repl(&vm),
