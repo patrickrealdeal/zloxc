@@ -6,13 +6,13 @@ const ObjType = enum {
 };
 
 pub const Obj = struct {
-    otype: ObjType,
+    obj_t: ObjType,
     next: ?*Obj,
 
-    pub fn create(vm: *VM, comptime T: type, otype: ObjType) !*T {
+    pub fn create(vm: *VM, comptime T: type, obj_t: ObjType) !*T {
         const ptr_t = try vm.allocator.create(T);
         ptr_t.obj = Obj{
-            .otype = otype,
+            .obj_t = obj_t,
             .next = vm.objects,
         };
         vm.objects = &ptr_t.obj;
@@ -23,12 +23,12 @@ pub const Obj = struct {
         return @alignCast(@fieldParentPtr("obj", self));
     }
 
-    pub fn is(self: *Obj, otype: ObjType) bool {
-        return self.otype == otype;
+    pub fn is(self: *Obj, obj_t: ObjType) bool {
+        return self.obj_t == obj_t;
     }
 
     pub fn destroy(self: *Obj, vm: *VM) void {
-        switch (self.otype) {
+        switch (self.obj_t) {
             .string => self.asString().destroy(vm),
         }
     }
