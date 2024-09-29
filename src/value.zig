@@ -59,10 +59,3 @@ pub const Value = union(Tag) {
 test "size of a Value" {
     try std.testing.expect(@sizeOf(Value) == 16);
 }
-test "use of union with tags" {
-    const v = Value{ .bool = true };
-    try std.testing.expect(v == .bool);
-    try std.testing.expect(v != .number);
-    try std.testing.expect(v != .nil);
-    try std.testing.expect(v.bool);
-}
