@@ -17,6 +17,7 @@ pub const VM = struct {
     stack_top: usize,
     allocator: std.mem.Allocator,
     objects: ?*Obj.Obj,
+    strings: std.StringHashMap(*Obj.String),
 
     pub fn init(allocator: std.mem.Allocator) VM {
         return VM{
@@ -26,6 +27,7 @@ pub const VM = struct {
             .stack_top = 0,
             .allocator = allocator,
             .objects = null,
+            .strings = std.StringHashMap(*Obj.String).init(allocator),
         };
     }
 
@@ -35,6 +37,15 @@ pub const VM = struct {
         }
         self.resetStack();
         self.freeObjects();
+        self.strings.deinit();
+        for (self.stack) |elem| {
+            if (@typeInfo(@TypeOf(elem)) == .pointer) {
+                self.allocator.free(elem);
+            }
+        }
+
+        self.stack_top = 0;
+        self.ip = 0;
     }
 
     pub fn interpret(self: *VM, source: []const u8) !void {

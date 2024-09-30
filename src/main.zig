@@ -6,10 +6,12 @@ const stdout = std.io.getStdOut().writer();
 const stdin = std.io.getStdIn().reader();
 
 pub fn main() !u8 {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    var arena = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = arena.allocator();
-    defer arena.deinit();
+
+    defer _ = arena.deinit();
     const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
 
     var vm = VM.init(allocator);
     defer vm.deinit();

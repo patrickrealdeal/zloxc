@@ -1,5 +1,7 @@
 const std = @import("std");
 const VM = @import("vm.zig").VM;
+const Value = @import("value.zig").Value;
+const Table = @import("table.zig");
 
 const ObjType = enum {
     string,
@@ -27,41 +29,46 @@ pub const Obj = struct {
         return self.obj_t == obj_t;
     }
 
-    pub fn destroy(self: *Obj, vm: *VM) void {
-        switch (self.obj_t) {
-            .string => self.asString().destroy(vm),
-        }
+    pub fn destroy(obj: *Obj, vm: *VM) void {
+        const self: *String = @fieldParentPtr("obj", obj);
+        vm.allocator.free(self.bytes);
+        vm.allocator.destroy(self);
     }
 };
 
 pub const String = struct {
     obj: Obj,
     bytes: []const u8,
+    hash: u32,
 
     pub fn allocate(vm: *VM, bytes: []const u8) !*String {
         const str = try Obj.create(vm, String, .string);
         str.bytes = bytes;
+        try vm.strings.put(bytes, str);
         return str;
     }
 
     pub fn copy(vm: *VM, bytes: []const u8) !*String {
-        const heap_bytes = try vm.allocator.alloc(u8, bytes.len);
-        std.mem.copyForwards(u8, heap_bytes, bytes);
+        const interned = vm.strings.get(bytes);
+        if (interned) |str| {
+            vm.allocator.free(bytes);
+            return str;
+        }
+        const heap_bytes = try vm.allocator.dupe(u8, bytes);
         return allocate(vm, heap_bytes);
     }
 
     pub fn take(vm: *VM, bytes: []const u8) !*String {
+        const interned = vm.strings.get(bytes);
+        if (interned) |str| {
+            vm.allocator.free(bytes);
+            return str;
+        }
+
         return try allocate(vm, bytes);
     }
 
     pub fn destroy(self: *String, vm: *VM) void {
-        vm.allocator.free(self.bytes);
         vm.allocator.destroy(self);
     }
 };
-
-test "object" {
-    const obj = try String.allocate(std.testing.allocator, "hello, world!");
-    defer std.testing.allocator.destroy(obj);
-    try std.testing.expect(std.mem.eql(u8, obj.bytes, "hello, world!"));
-}
