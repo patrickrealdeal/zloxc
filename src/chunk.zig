@@ -15,6 +15,11 @@ pub const OpCode = enum(usize) {
     equal,
     greater,
     less,
+    print,
+    pop,
+    define_global,
+    get_global,
+    set_global,
     ret,
 };
 
@@ -80,6 +85,11 @@ pub const Chunk = struct {
             .equal => return simpleInstruction("op_equal", offset),
             .greater => return simpleInstruction("op_greater", offset),
             .less => return simpleInstruction("op_less", offset),
+            .print => return simpleInstruction("op_print", offset),
+            .pop => return simpleInstruction("op_pop", offset),
+            .define_global => return constantInstruction("op_define_global", self, offset),
+            .get_global => return constantInstruction("op_get_global", self, offset),
+            .set_global => return constantInstruction("op_set_global", self, offset),
             .ret => return simpleInstruction("op_ret", offset),
         }
 

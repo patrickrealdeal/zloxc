@@ -18,6 +18,7 @@ pub const VM = struct {
     allocator: std.mem.Allocator,
     objects: ?*Obj.Obj,
     strings: std.StringHashMap(*Obj.String),
+    globals: std.StringHashMap(Value),
 
     pub fn init(allocator: std.mem.Allocator) VM {
         return VM{
@@ -28,16 +29,19 @@ pub const VM = struct {
             .allocator = allocator,
             .objects = null,
             .strings = std.StringHashMap(*Obj.String).init(allocator),
+            .globals = std.StringHashMap(Value).init(allocator),
         };
     }
 
     pub fn deinit(self: *VM) void {
         if (comptime debug_gc) {
-            std.debug.print("Uninitializing VM\n", .{});
+            std.debug.print("-----------------\nUninitializing VM\n", .{});
         }
         self.resetStack();
         self.freeObjects();
         self.strings.deinit();
+        self.globals.deinit();
+
         for (self.stack) |elem| {
             if (@typeInfo(@TypeOf(elem)) == .pointer) {
                 self.allocator.free(elem);
@@ -101,9 +105,32 @@ pub const VM = struct {
                 },
                 .greater => try self.binaryOp(.gt),
                 .less => try self.binaryOp(.lt),
+                .print => Value.printValue(self.pop()),
+                .pop => _ = self.pop(),
+                .define_global => {
+                    const name = self.readString();
+                    try self.globals.put(name.bytes, self.peek(0));
+                    _ = self.pop();
+                },
+                .get_global => {
+                    const name = self.readString();
+                    const value = self.globals.get(name.bytes) orelse {
+                        self.runtimeErr("Undefined variable {s}.\n", .{name.bytes});
+                        return InterpretError.RuntimeError;
+                    };
+                    try self.push(value);
+                },
+                .set_global => {
+                    const name = self.readString();
+                    if (!self.globals.contains(name.bytes)) {
+                        self.runtimeErr("Undefined variable {s}.\n", .{name.bytes});
+                        return InterpretError.RuntimeError;
+                    }
+                    try self.globals.put(name.bytes, self.peek(0));
+                },
                 .ret => {
-                    Value.printValue(self.pop());
-                    std.debug.print("\n", .{});
+                    //    Value.printValue(self.pop());
+                    //    std.debug.print("\n", .{});
                     return;
                 },
             }
@@ -114,6 +141,10 @@ pub const VM = struct {
         const byte = self.chunk.code.items[self.ip];
         self.ip += 1;
         return byte;
+    }
+
+    inline fn readString(self: *VM) *Obj.String {
+        return self.chunk.constants.items[self.readByte()].asObj().asString();
     }
 
     fn readConstant(self: *VM) Value {
@@ -197,7 +228,6 @@ pub const VM = struct {
         var total_objects: u64 = 0;
         while (obj) |object| {
             if (comptime debug_gc) {
-                std.debug.print("{s}\n", .{object.asString().bytes});
                 total_objects += 1;
             }
             const next = object.next;

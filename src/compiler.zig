@@ -15,11 +15,9 @@ pub fn compile(source: []const u8, chunk: *Chunk, vm: *VM) !void {
     var scanner = Scanner.init(source);
     var parser = Parser.init(&scanner, chunk, vm);
     try parser.advance();
-    try parser.expression();
 
-    if (scanner.scanToken()) |_| {
-        parser.errorAtCurrent("Expected end of expression");
-        return CompilerError.Compiler_Error;
+    while (!try parser.match(.eof)) {
+        try parser.declaration();
     }
 
     parser.endCompiler();
@@ -39,7 +37,7 @@ const Precedence = enum {
     prec_primary,
 };
 
-const ParseFn = fn (parser: *Parser) anyerror!void;
+const ParseFn = fn (parser: *Parser, can_assign: bool) anyerror!void;
 
 const ParseRule = struct {
     prefix: ?*const ParseFn,
@@ -76,7 +74,7 @@ inline fn getRule(ttype: TokenType) ParseRule {
         .greater_equal => ParseRule.init(null, Parser.binary, .prec_comparison),
         .less => ParseRule.init(null, Parser.binary, .prec_comparison),
         .less_equal => ParseRule.init(null, Parser.binary, .prec_comparison),
-        .identifier => ParseRule.init(null, null, .prec_none),
+        .identifier => ParseRule.init(Parser.variable, null, .prec_none),
         .string => ParseRule.init(Parser.string, null, .prec_none),
         .number => ParseRule.init(Parser.number, null, .prec_none),
         .keyword_and => ParseRule.init(null, null, .prec_none),
@@ -121,8 +119,8 @@ const Parser = struct {
 
     pub fn advance(self: *Parser) !void {
         self.previous = self.current;
-        while (self.scanner.scanToken()) |tok| {
-            self.current = tok;
+        while (true) {
+            self.current = self.scanner.scanToken();
             if (self.current.ttype != .err) break;
 
             self.errorAtCurrent(self.current.lexeme);
@@ -130,7 +128,7 @@ const Parser = struct {
         }
     }
 
-    fn consume(self: *Parser, ttype: TokenType, message: []const u8) !void {
+    fn consume(self: *Parser, ttype: TokenType, comptime message: []const u8) !void {
         if (self.current.ttype == ttype) {
             try self.advance();
             return;
@@ -147,43 +145,122 @@ const Parser = struct {
             return CompilerError.Compiler_Error;
         };
 
-        try prefixRule(self);
+        const can_assign = @intFromEnum(precedence) <= @intFromEnum(Precedence.prec_assignment);
+        try prefixRule(self, can_assign);
 
         while (@intFromEnum(precedence) <= @intFromEnum(getRule(self.current.ttype).precedence)) {
             try self.advance();
             const rule = getRule(self.previous.ttype);
             std.debug.print("{any}\n", .{rule});
-            const infixRule = rule.infix orelse {
-                self.err("Unreachable");
-                return CompilerError.Compiler_Error;
-            };
-
-            try infixRule(self);
+            const infixRule = rule.infix orelse unreachable;
+            try infixRule(self, can_assign);
         }
+
+        if (can_assign and try self.match(.equal)) {
+            self.err("Invalid assignment target");
+        }
+    }
+
+    fn parseVariable(self: *Parser, comptime message: []const u8) !u8 {
+        try self.consume(.identifier, message);
+        return try self.identifierConstant(self.previous);
+    }
+
+    fn defineVariable(self: *Parser, global: u8) !void {
+        self.emitBytes(@intFromEnum(OpCode.define_global), global);
+    }
+
+    fn identifierConstant(self: *Parser, name: Token) !u8 {
+        return try self.makeConstant(Value{ .obj = &(try Obj.String.copy(self.vm, name.lexeme)).obj });
     }
 
     fn expression(self: *Parser) !void {
         try self.parsePrecedence(.prec_assignment);
     }
 
-    fn number(self: *Parser) !void {
+    fn varDeclaration(self: *Parser) !void {
+        const global = try self.parseVariable("Expected variable name.");
+
+        if (try self.match(.equal)) {
+            try self.expression();
+        } else {
+            self.emitByte(@intFromEnum(OpCode.nil));
+        }
+
+        try self.consume(.semicolon, "Expected ';' after variable declaration,");
+        try self.defineVariable(global);
+    }
+
+    fn declaration(self: *Parser) !void {
+        if (try self.match(.keyword_var)) {
+            try self.varDeclaration();
+        } else {
+            try self.statement();
+        }
+
+        if (self.panic_mode) try self.synchronize();
+    }
+
+    fn statement(self: *Parser) !void {
+        if (try self.match(.keyword_print)) {
+            try self.printStatement();
+        } else {
+            try self.expressionStatement();
+        }
+    }
+
+    fn expressionStatement(self: *Parser) !void {
+        try self.expression();
+        try self.consume(.semicolon, "Expected ';' after expression.");
+        self.emitByte(@intFromEnum(OpCode.pop));
+    }
+
+    fn printStatement(self: *Parser) !void {
+        try self.expression();
+        try self.consume(.semicolon, "Expected ';' after value.");
+        self.emitByte(@intFromEnum(OpCode.print));
+    }
+
+    fn synchronize(self: *Parser) !void {
+        self.panic_mode = false;
+
+        while (!try self.match(.eof)) {
+            if (self.previous.ttype == .semicolon) return;
+            switch (self.current.ttype) {
+                .keyword_class, .keyword_fun, .keyword_var, .keyword_for, .keyword_if, .keyword_while, .keyword_print, .keyword_return => return,
+                else => try self.advance(),
+            }
+        }
+    }
+
+    fn number(self: *Parser, can_assign: bool) !void {
+        _ = can_assign;
         const value = std.fmt.parseFloat(f64, self.previous.lexeme) catch unreachable;
         try self.emitConstant(Value{ .number = value });
     }
 
-    fn grouping(self: *Parser) !void {
+    fn match(self: *Parser, ttype: TokenType) !bool {
+        if (!(self.current.ttype == ttype)) return false;
+        try self.advance();
+        return true;
+    }
+
+    fn grouping(self: *Parser, can_assign: bool) !void {
+        _ = can_assign;
         try self.expression();
         try self.consume(.right_paren, "expected ')' after expression");
     }
 
-    fn string(self: *Parser) !void {
+    fn string(self: *Parser, can_assign: bool) !void {
+        _ = can_assign;
         const bytes_len = self.previous.lexeme.len;
         // discards '""'
         const str = try Obj.String.copy(self.vm, self.previous.lexeme[1 .. bytes_len - 1]);
         try self.emitConstant(Value{ .obj = &str.obj });
     }
 
-    fn literal(self: *Parser) !void {
+    fn literal(self: *Parser, can_assign: bool) !void {
+        _ = can_assign;
         switch (self.previous.ttype) {
             .keyword_false => self.emitByte(@intFromEnum(OpCode.false)),
             .keyword_true => self.emitByte(@intFromEnum(OpCode.true)),
@@ -192,7 +269,23 @@ const Parser = struct {
         }
     }
 
-    fn unary(self: *Parser) !void {
+    fn variable(self: *Parser, can_assign: bool) !void {
+        try self.namedVariable(self.previous, can_assign);
+    }
+
+    fn namedVariable(self: *Parser, token: Token, can_assign: bool) !void {
+        const arg = try self.identifierConstant(token);
+
+        if (can_assign and try self.match(.equal)) {
+            try self.expression();
+            self.emitBytes(@intFromEnum(OpCode.set_global), arg);
+        } else {
+            self.emitBytes(@intFromEnum(OpCode.get_global), arg);
+        }
+    }
+
+    fn unary(self: *Parser, can_assign: bool) !void {
+        _ = can_assign;
         const optype = self.previous.ttype;
 
         // compile opperand
@@ -205,7 +298,8 @@ const Parser = struct {
         }
     }
 
-    fn binary(self: *Parser) !void {
+    fn binary(self: *Parser, can_assign: bool) !void {
+        _ = can_assign;
         const optype = self.previous.ttype;
         const rule = getRule(optype);
         try self.parsePrecedence(@enumFromInt(@intFromEnum(rule.precedence) + 1));
@@ -264,6 +358,7 @@ const Parser = struct {
 
         if (comptime debug_print_code) {
             Chunk.disassemble(self.currentChunk(), "code");
+            std.debug.print("-----------------\n", .{});
         }
     }
 

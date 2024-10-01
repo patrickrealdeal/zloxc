@@ -15,9 +15,9 @@ pub const Scanner = struct {
         };
     }
 
-    pub fn scanToken(self: *Scanner) ?Token {
+    pub fn scanToken(self: *Scanner) Token {
         self.skipWhitespace();
-        if (self.isAtEnd()) return null;
+        if (self.isAtEnd()) return self.makeToken(.eof);
         self.start = self.current;
 
         const c = self.advance();
@@ -183,7 +183,7 @@ pub const Scanner = struct {
         return self.source[self.current - 1];
     }
 
-    fn isAtEnd(self: *Scanner) bool {
+    pub fn isAtEnd(self: *Scanner) bool {
         return self.current >= self.source.len;
     }
 };

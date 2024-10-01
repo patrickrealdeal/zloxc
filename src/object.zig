@@ -51,7 +51,7 @@ pub const String = struct {
     pub fn copy(vm: *VM, bytes: []const u8) !*String {
         const interned = vm.strings.get(bytes);
         if (interned) |str| {
-            vm.allocator.free(bytes);
+            //vm.allocator.free(bytes);
             return str;
         }
         const heap_bytes = try vm.allocator.dupe(u8, bytes);
