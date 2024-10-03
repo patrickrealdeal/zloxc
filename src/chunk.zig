@@ -20,6 +20,8 @@ pub const OpCode = enum(usize) {
     define_global,
     get_global,
     set_global,
+    get_local,
+    set_local,
     ret,
 };
 
@@ -90,6 +92,8 @@ pub const Chunk = struct {
             .define_global => return constantInstruction("op_define_global", self, offset),
             .get_global => return constantInstruction("op_get_global", self, offset),
             .set_global => return constantInstruction("op_set_global", self, offset),
+            .get_local => return byteInstruction("op_get_local", self, offset),
+            .set_local => return byteInstruction("op_set_local", self, offset),
             .ret => return simpleInstruction("op_ret", offset),
         }
 
@@ -106,6 +110,12 @@ pub const Chunk = struct {
         std.debug.print("{s: <16} {d:4} '", .{ name, constant });
         Value.printValue(chunk.constants.items[constant]);
         std.debug.print("'\n", .{});
+        return offset + 2;
+    }
+
+    fn byteInstruction(name: []const u8, chunk: *Chunk, offset: usize) usize {
+        const slot = chunk.code.items[offset + 1];
+        std.debug.print("{s: <16} {d:4}\n", .{ name, slot });
         return offset + 2;
     }
 };

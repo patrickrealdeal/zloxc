@@ -41,7 +41,9 @@ fn repl(vm: *VM) !void {
         };
         if (line.len == 0) continue;
 
-        try vm.interpret(line);
+        vm.interpret(line) catch {
+            continue;
+        };
     }
 }
 

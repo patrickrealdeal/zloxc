@@ -9,12 +9,45 @@ const Obj = @import("object.zig");
 const VM = @import("vm.zig").VM;
 
 const debug_print_code = true;
-const CompilerError = error{Compiler_Error};
+const u8_count = std.math.maxInt(u8) + 1;
+const CompilerError = error{ Compiler_Error, TooManyLocalVariables, VarAlreadyDeclared };
+
+const Compiler = struct {
+    locals: [u8_count]Local,
+    local_count: u8,
+    scope_depth: u32,
+
+    pub fn init() Compiler {
+        return .{
+            .locals = undefined,
+            .local_count = 0,
+            .scope_depth = 0,
+        };
+    }
+
+    pub fn addLocal(self: *Compiler, name: Token) !void {
+        if (current.local_count == u8_count) {
+            return CompilerError.TooManyLocalVariables;
+        }
+
+        self.locals[self.local_count] = Local{ .name = name, .depth = null };
+        self.local_count += 1;
+    }
+};
+
+const Local = struct {
+    name: Token,
+    depth: ?u32,
+};
+
+var current: *Compiler = undefined;
 
 pub fn compile(source: []const u8, chunk: *Chunk, vm: *VM) !void {
     var scanner = Scanner.init(source);
     var parser = Parser.init(&scanner, chunk, vm);
     try parser.advance();
+    var compiler = Compiler.init();
+    current = &compiler;
 
     while (!try parser.match(.eof)) {
         try parser.declaration();
@@ -163,19 +196,59 @@ const Parser = struct {
 
     fn parseVariable(self: *Parser, comptime message: []const u8) !u8 {
         try self.consume(.identifier, message);
+
+        try self.declareVariable();
+        if (current.scope_depth > 0) return 0;
+
         return try self.identifierConstant(self.previous);
     }
 
     fn defineVariable(self: *Parser, global: u8) !void {
+        if (current.scope_depth > 0) {
+            self.markInitialized();
+            return;
+        }
         self.emitBytes(@intFromEnum(OpCode.define_global), global);
+    }
+
+    fn markInitialized(self: *Parser) void {
+        _ = self;
+        current.locals[current.local_count - 1].depth = current.scope_depth;
     }
 
     fn identifierConstant(self: *Parser, name: Token) !u8 {
         return try self.makeConstant(Value{ .obj = &(try Obj.String.copy(self.vm, name.lexeme)).obj });
     }
 
+    fn declareVariable(self: *Parser) !void {
+        if (current.scope_depth == 0) return;
+        const name = self.previous;
+        var i: usize = current.local_count;
+        while (i > 0) {
+            i -= 1;
+            const local = current.locals[i];
+            if (local.depth != null and local.depth.? < current.scope_depth) {
+                break;
+            }
+
+            if (std.mem.eql(u8, local.name.lexeme, name.lexeme)) {
+                return CompilerError.VarAlreadyDeclared;
+            }
+        }
+
+        try current.addLocal(name);
+    }
+
     fn expression(self: *Parser) !void {
         try self.parsePrecedence(.prec_assignment);
+    }
+
+    fn block(self: *Parser) !void {
+        while (!self.check(.right_brace) and !self.check(.eof)) {
+            try self.declaration();
+        }
+
+        try self.consume(.right_brace, "Expect '}' after block.");
     }
 
     fn varDeclaration(self: *Parser) !void {
@@ -191,7 +264,7 @@ const Parser = struct {
         try self.defineVariable(global);
     }
 
-    fn declaration(self: *Parser) !void {
+    fn declaration(self: *Parser) anyerror!void {
         if (try self.match(.keyword_var)) {
             try self.varDeclaration();
         } else {
@@ -204,6 +277,10 @@ const Parser = struct {
     fn statement(self: *Parser) !void {
         if (try self.match(.keyword_print)) {
             try self.printStatement();
+        } else if (try self.match(.left_brace)) {
+            self.beginScope();
+            try self.block();
+            self.endScope();
         } else {
             try self.expressionStatement();
         }
@@ -245,6 +322,10 @@ const Parser = struct {
         return true;
     }
 
+    fn check(self: *Parser, ttype: TokenType) bool {
+        return self.current.ttype == ttype;
+    }
+
     fn grouping(self: *Parser, can_assign: bool) !void {
         _ = can_assign;
         try self.expression();
@@ -273,15 +354,42 @@ const Parser = struct {
         try self.namedVariable(self.previous, can_assign);
     }
 
-    fn namedVariable(self: *Parser, token: Token, can_assign: bool) !void {
-        const arg = try self.identifierConstant(token);
+    fn namedVariable(self: *Parser, name: Token, can_assign: bool) !void {
+        var get_op: OpCode = undefined;
+        var set_op: OpCode = undefined;
+
+        var arg: ?u8 = self.resolveLocal(current, name);
+        if (arg) |_| {
+            get_op = .get_local;
+            set_op = .set_local;
+        } else {
+            arg = try self.identifierConstant(name);
+            get_op = .get_global;
+            set_op = .set_global;
+        }
 
         if (can_assign and try self.match(.equal)) {
             try self.expression();
-            self.emitBytes(@intFromEnum(OpCode.set_global), arg);
+            self.emitBytes(@as(u8, @intCast(@intFromEnum(set_op))), arg.?);
         } else {
-            self.emitBytes(@intFromEnum(OpCode.get_global), arg);
+            self.emitBytes(@as(u8, @intCast(@intFromEnum(get_op))), arg.?);
         }
+    }
+
+    fn resolveLocal(self: *Parser, compiler: *Compiler, name: Token) ?u8 {
+        var i: usize = compiler.local_count;
+        while (i > 0) {
+            i -= 1;
+            const local = compiler.locals[i];
+            if (std.mem.eql(u8, name.lexeme, local.name.lexeme)) {
+                if (local.depth == null) {
+                    self.err("Can't read local variable in its own initializer.");
+                }
+                return @as(u8, @intCast(i));
+            }
+        }
+
+        return null;
     }
 
     fn unary(self: *Parser, can_assign: bool) !void {
@@ -359,6 +467,21 @@ const Parser = struct {
         if (comptime debug_print_code) {
             Chunk.disassemble(self.currentChunk(), "code");
             std.debug.print("-----------------\n", .{});
+        }
+    }
+
+    fn beginScope(self: *Parser) void {
+        _ = self;
+        current.scope_depth += 1;
+    }
+
+    fn endScope(self: *Parser) void {
+        current.scope_depth -= 1;
+        while (current.local_count > 0 and
+            current.locals[current.local_count - 1].depth.? > current.scope_depth)
+        {
+            self.emitByte(@intFromEnum(OpCode.pop));
+            current.local_count -= 1;
         }
     }
 

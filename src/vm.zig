@@ -105,7 +105,10 @@ pub const VM = struct {
                 },
                 .greater => try self.binaryOp(.gt),
                 .less => try self.binaryOp(.lt),
-                .print => Value.printValue(self.pop()),
+                .print => {
+                    Value.printValue(self.pop());
+                    std.debug.print("\n", .{});
+                },
                 .pop => _ = self.pop(),
                 .define_global => {
                     const name = self.readString();
@@ -127,6 +130,14 @@ pub const VM = struct {
                         return InterpretError.RuntimeError;
                     }
                     try self.globals.put(name.bytes, self.peek(0));
+                },
+                .get_local => {
+                    const slot = self.readByte();
+                    try self.push(self.stack[slot]);
+                },
+                .set_local => {
+                    const slot = self.readByte();
+                    self.stack[slot] = self.peek(0);
                 },
                 .ret => {
                     //    Value.printValue(self.pop());

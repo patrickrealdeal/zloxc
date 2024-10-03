@@ -21,7 +21,6 @@ pub const Value = union(Tag) {
             .obj => |obj| std.debug.print("{s}", .{obj.asString().bytes}),
             .nil => std.debug.print("nil", .{}),
         }
-        std.debug.print("\n", .{});
     }
 
     pub fn asObj(self: Value) *Obj {
