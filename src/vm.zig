@@ -7,7 +7,7 @@ const Obj = @import("object.zig");
 
 const debug_trace_execution = false;
 const debug_trace_stack = false;
-const debug_gc = true;
+const debug_gc = false;
 const stack_max = 256;
 
 pub const VM = struct {
@@ -139,6 +139,18 @@ pub const VM = struct {
                     const slot = self.readByte();
                     self.stack[slot] = self.peek(0);
                 },
+                .jump_if_false => {
+                    const offset = self.readU16();
+                    if (isFalsey(self.peek(0))) self.ip += offset;
+                },
+                .jump => {
+                    const offset = self.readU16();
+                    self.ip += offset;
+                },
+                .loop => {
+                    const offset = self.readU16();
+                    self.ip -= offset;
+                },
                 .ret => {
                     //    Value.printValue(self.pop());
                     //    std.debug.print("\n", .{});
@@ -152,6 +164,13 @@ pub const VM = struct {
         const byte = self.chunk.code.items[self.ip];
         self.ip += 1;
         return byte;
+    }
+
+    fn readU16(self: *VM) usize {
+        const byte1 = @as(u16, self.chunk.code.items[self.ip]);
+        const byte2 = self.chunk.code.items[self.ip + 1];
+        self.ip += 2;
+        return (byte1 << 8) | byte2;
     }
 
     inline fn readString(self: *VM) *Obj.String {

@@ -22,8 +22,13 @@ pub const OpCode = enum(usize) {
     set_global,
     get_local,
     set_local,
+    jump_if_false,
+    jump,
+    loop,
     ret,
 };
+
+const Sign = enum { neg, pos };
 
 pub const Chunk = struct {
     code: std.ArrayList(u8),
@@ -94,6 +99,9 @@ pub const Chunk = struct {
             .set_global => return constantInstruction("op_set_global", self, offset),
             .get_local => return byteInstruction("op_get_local", self, offset),
             .set_local => return byteInstruction("op_set_local", self, offset),
+            .jump_if_false => return jumpInstruction("op_jump_if_false", .pos, self, offset),
+            .jump => return jumpInstruction("op_jump", .pos, self, offset),
+            .loop => return jumpInstruction("op_loop", .neg, self, offset),
             .ret => return simpleInstruction("op_ret", offset),
         }
 
@@ -117,5 +125,17 @@ pub const Chunk = struct {
         const slot = chunk.code.items[offset + 1];
         std.debug.print("{s: <16} {d:4}\n", .{ name, slot });
         return offset + 2;
+    }
+
+    fn jumpInstruction(name: []const u8, sign: Sign, chunk: *Chunk, offset: usize) usize {
+        const byte1: u16 = chunk.code.items[offset + 1];
+        const byte2 = chunk.code.items[offset + 2];
+        const jump = (byte1 << 8) | byte2;
+        const jump_addr = switch (sign) {
+            .neg => offset + 3 - jump,
+            .pos => offset + 3 + jump,
+        };
+        std.debug.print("{s: <16} {d:4} -> {d}\n", .{ name, jump, jump_addr });
+        return offset + 3;
     }
 };
