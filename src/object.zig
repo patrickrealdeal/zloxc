@@ -1,40 +1,40 @@
 const std = @import("std");
-const VM = @import("vm.zig").VM;
-const Value = @import("value.zig").Value;
+const VM = @import("vm.zig");
+const Value = @import("value.zig");
 const Table = @import("table.zig");
+
+const Obj = @This();
 
 const ObjType = enum {
     string,
 };
 
-pub const Obj = struct {
-    obj_t: ObjType,
-    next: ?*Obj,
+obj_t: ObjType,
+next: ?*Obj,
 
-    pub fn create(vm: *VM, comptime T: type, obj_t: ObjType) !*T {
-        const ptr_t = try vm.allocator.create(T);
-        ptr_t.obj = Obj{
-            .obj_t = obj_t,
-            .next = vm.objects,
-        };
-        vm.objects = &ptr_t.obj;
-        return ptr_t;
-    }
+pub fn create(vm: *VM, comptime T: type, obj_t: ObjType) !*T {
+    const ptr_t = try vm.allocator.create(T);
+    ptr_t.obj = Obj{
+        .obj_t = obj_t,
+        .next = vm.objects,
+    };
+    vm.objects = &ptr_t.obj;
+    return ptr_t;
+}
 
-    pub fn asString(self: *Obj) *String {
-        return @alignCast(@fieldParentPtr("obj", self));
-    }
+pub fn asString(self: *Obj) *String {
+    return @alignCast(@fieldParentPtr("obj", self));
+}
 
-    pub fn is(self: *Obj, obj_t: ObjType) bool {
-        return self.obj_t == obj_t;
-    }
+pub fn is(self: *Obj, obj_t: ObjType) bool {
+    return self.obj_t == obj_t;
+}
 
-    pub fn destroy(obj: *Obj, vm: *VM) void {
-        const self: *String = @fieldParentPtr("obj", obj);
-        vm.allocator.free(self.bytes);
-        vm.allocator.destroy(self);
-    }
-};
+pub fn destroy(obj: *Obj, vm: *VM) void {
+    const self: *String = @fieldParentPtr("obj", obj);
+    vm.allocator.free(self.bytes);
+    vm.allocator.destroy(self);
+}
 
 pub const String = struct {
     obj: Obj,

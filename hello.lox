@@ -17,11 +17,9 @@ if (1 == 1 or 3 < 2) {
 
 var i = 0;
 while (i < 1000) {
-    print i;
     i = i + 1;
 }
 
 for (var j = 0; j < 1000; j = j + 1) {
-    print j;
 }
 

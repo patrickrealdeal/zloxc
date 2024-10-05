@@ -1,19 +1,19 @@
 const std = @import("std");
-const Scanner = @import("scanner.zig").Scanner;
-const Chunk = @import("chunk.zig").Chunk;
-const Token = @import("scanner.zig").Token;
-const OpCode = @import("chunk.zig").OpCode;
+const Scanner = @import("scanner.zig");
+const Chunk = @import("chunk.zig");
+const Token = @import("token.zig");
+const TokenType = Token.TokenType;
+const OpCode = Chunk.OpCode;
 const Value = @import("value.zig").Value;
-const TokenType = @import("scanner.zig").TokenType;
 const Obj = @import("object.zig");
-const VM = @import("vm.zig").VM;
+const VM = @import("vm.zig");
 
 const debug_print_code = true;
-const u8_count = std.math.maxInt(u8) + 1;
+const u8_max = std.math.maxInt(u8) + 1;
 const CompilerError = error{ CompilerError, TooManyLocalVariables, VarAlreadyDeclared };
 
 const Compiler = struct {
-    locals: [u8_count]Local,
+    locals: [u8_max]Local,
     local_count: u8,
     scope_depth: u32,
 
@@ -26,7 +26,7 @@ const Compiler = struct {
     }
 
     pub fn addLocal(self: *Compiler, name: Token) !void {
-        if (current.local_count == u8_count) {
+        if (current.local_count == u8_max) {
             return CompilerError.TooManyLocalVariables;
         }
 
@@ -110,20 +110,20 @@ inline fn getRule(ttype: TokenType) ParseRule {
         .identifier => ParseRule.init(Parser.variable, null, .prec_none),
         .string => ParseRule.init(Parser.string, null, .prec_none),
         .number => ParseRule.init(Parser.number, null, .prec_none),
-        .keyword_and => ParseRule.init(null, Parser.and_, .prec_and),
         .keyword_class => ParseRule.init(null, null, .prec_none),
         .keyword_else => ParseRule.init(null, null, .prec_none),
         .keyword_false => ParseRule.init(Parser.literal, null, .prec_none),
+        .keyword_true => ParseRule.init(Parser.literal, null, .prec_none),
         .keyword_for => ParseRule.init(null, null, .prec_none),
         .keyword_fun => ParseRule.init(null, null, .prec_none),
         .keyword_if => ParseRule.init(null, null, .prec_none),
         .keyword_nil => ParseRule.init(Parser.literal, null, .prec_none),
+        .keyword_and => ParseRule.init(null, Parser.and_, .prec_and),
         .keyword_or => ParseRule.init(null, Parser.or_, .prec_or),
         .keyword_print => ParseRule.init(null, null, .prec_none),
         .keyword_return => ParseRule.init(null, null, .prec_none),
         .keyword_super => ParseRule.init(null, null, .prec_none),
         .keyword_this => ParseRule.init(null, null, .prec_none),
-        .keyword_true => ParseRule.init(Parser.literal, null, .prec_none),
         .keyword_var => ParseRule.init(null, null, .prec_none),
         .keyword_while => ParseRule.init(null, null, .prec_none),
         .err => ParseRule.init(null, null, .prec_none),
@@ -238,7 +238,8 @@ const Parser = struct {
     }
 
     fn identifierConstant(self: *Parser, name: Token) !u8 {
-        return try self.makeConstant(Value{ .obj = &(try Obj.String.copy(self.vm, name.lexeme)).obj });
+        const str = try Obj.String.copy(self.vm, name.lexeme);
+        return try self.makeConstant(Value{ .obj = &str.obj });
     }
 
     fn declareVariable(self: *Parser) !void {
@@ -466,8 +467,8 @@ const Parser = struct {
     }
 
     fn namedVariable(self: *Parser, name: Token, can_assign: bool) !void {
-        var get_op: OpCode = undefined;
-        var set_op: OpCode = undefined;
+        var get_op: ?OpCode = null;
+        var set_op: ?OpCode = null;
 
         var arg: ?u8 = self.resolveLocal(current, name);
         if (arg) |_| {
@@ -481,9 +482,9 @@ const Parser = struct {
 
         if (can_assign and try self.match(.equal)) {
             try self.expression();
-            self.emitBytes(@as(u8, @intCast(@intFromEnum(set_op))), arg.?);
+            self.emitBytes(@as(u8, @intCast(@intFromEnum(set_op.?))), arg.?);
         } else {
-            self.emitBytes(@as(u8, @intCast(@intFromEnum(get_op))), arg.?);
+            self.emitBytes(@as(u8, @intCast(@intFromEnum(get_op.?))), arg.?);
         }
     }
 
@@ -592,8 +593,8 @@ const Parser = struct {
 
     fn emitJump(self: *Parser, byte: u8) usize {
         self.emitByte(byte);
-        self.emitByte(0xff);
-        self.emitByte(0xff);
+        // 16-bit placeholder operand to calculate the jump
+        self.emitBytes(0xff, 0xff);
         return self.currentChunk().code.items.len - 2;
     }
 

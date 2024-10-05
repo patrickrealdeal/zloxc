@@ -1,5 +1,5 @@
 const std = @import("std");
-const Obj = @import("object.zig").Obj;
+const Obj = @import("object.zig");
 
 pub const Tag = enum {
     bool,
@@ -14,12 +14,14 @@ pub const Value = union(Tag) {
     obj: *Obj,
     nil,
 
-    pub fn printValue(self: Value) void {
+    pub fn format(self: Value, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
         switch (self) {
-            .bool => |b| std.debug.print("{any}", .{b}),
-            .number => |n| std.debug.print("{d}", .{n}),
-            .obj => |obj| std.debug.print("{s}", .{obj.asString().bytes}),
-            .nil => std.debug.print("nil", .{}),
+            .bool => |b| try writer.print("{any}", .{b}),
+            .number => |n| try writer.print("{d}", .{n}),
+            .obj => |obj| try printObj(obj, writer),
+            .nil => try writer.print("nil", .{}),
         }
     }
 
@@ -53,6 +55,12 @@ pub const Value = union(Tag) {
         // std.meta.eql checks Tag equality
         // and if present compares values
         return std.meta.eql(a, b);
+    }
+
+    pub fn printObj(obj: *Obj, writer: anytype) !void {
+        switch (obj.obj_t) {
+            .string => try writer.print("{s}", .{obj.asString().bytes}),
+        }
     }
 };
 

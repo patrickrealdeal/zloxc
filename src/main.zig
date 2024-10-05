@@ -1,5 +1,5 @@
 const std = @import("std");
-const VM = @import("vm.zig").VM;
+const VM = @import("vm.zig");
 
 const errout = std.io.getStdErr().writer();
 const stdout = std.io.getStdOut().writer();
