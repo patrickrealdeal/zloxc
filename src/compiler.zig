@@ -2,26 +2,32 @@ const std = @import("std");
 const Scanner = @import("scanner.zig");
 const Chunk = @import("chunk.zig");
 const Token = @import("token.zig");
-const TokenType = Token.TokenType;
-const OpCode = Chunk.OpCode;
 const Value = @import("value.zig").Value;
 const Obj = @import("object.zig");
 const VM = @import("vm.zig");
+const TokenType = Token.TokenType;
+const OpCode = Chunk.OpCode;
 
 const debug_print_code = true;
 const u8_max = std.math.maxInt(u8) + 1;
 const CompilerError = error{ CompilerError, TooManyLocalVariables, VarAlreadyDeclared };
 
 const Compiler = struct {
+    function: *Obj.Function,
+    func_t: FunctionType,
     locals: [u8_max]Local,
     local_count: u8,
     scope_depth: u32,
+    allocator: std.mem.Allocator,
 
-    pub fn init() Compiler {
+    pub fn init(vm: *VM, func_t: FunctionType) !Compiler {
         return .{
+            .function = try Obj.Function.allocate(vm),
+            .func_t = func_t,
             .locals = undefined,
             .local_count = 0,
             .scope_depth = 0,
+            .allocator = vm.allocator,
         };
     }
 
@@ -40,20 +46,32 @@ const Local = struct {
     depth: ?u32,
 };
 
+const FunctionType = enum {
+    function,
+    script,
+};
+
 var current: *Compiler = undefined;
 
-pub fn compile(source: []const u8, chunk: *Chunk, vm: *VM) !void {
+pub fn compile(source: []const u8, vm: *VM) !*Obj.Function {
     var scanner = Scanner.init(source);
-    var parser = Parser.init(&scanner, chunk, vm);
+    var parser = Parser.init(&scanner, vm);
     try parser.advance();
-    var compiler = Compiler.init();
+
+    var compiler = try Compiler.init(vm, .script);
     current = &compiler;
+    //std.debug.print("CURRENT FUNC: {any}", .{current.function});
+
+    const tok = Token{ .line = 0, .ttype = .identifier, .lexeme = "" };
+    current.locals[current.local_count] = Local{ .name = tok, .depth = 0 };
+    current.local_count += 1;
 
     while (!try parser.match(.eof)) {
         try parser.declaration();
     }
 
-    parser.endCompiler();
+    const function = parser.endCompiler();
+    return function;
 }
 
 const Precedence = enum {
@@ -135,16 +153,14 @@ const Parser = struct {
     current: Token,
     previous: Token,
     scanner: *Scanner,
-    compiling_chunk: *Chunk,
     panic_mode: bool,
     vm: *VM,
 
-    pub fn init(scanner: *Scanner, chunk: *Chunk, vm: *VM) Parser {
+    pub fn init(scanner: *Scanner, vm: *VM) Parser {
         return .{
             .current = undefined,
             .previous = undefined,
             .scanner = scanner,
-            .compiling_chunk = chunk,
             .panic_mode = false,
             .vm = vm,
         };
@@ -599,16 +615,20 @@ const Parser = struct {
     }
 
     fn currentChunk(self: *Parser) *Chunk {
-        return self.compiling_chunk;
+        _ = self;
+        return &current.function.chunk;
     }
 
-    fn endCompiler(self: *Parser) void {
+    fn endCompiler(self: *Parser) *Obj.Function {
         self.emitReturn();
+        const function = current.function;
 
         if (comptime debug_print_code) {
-            Chunk.disassemble(self.currentChunk(), "code");
+            Chunk.disassemble(self.currentChunk(), if (function.name) |name| name.bytes else "<script>");
             std.debug.print("-----------------\n", .{});
         }
+
+        return function;
     }
 
     fn beginScope(self: *Parser) void {

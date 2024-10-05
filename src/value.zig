@@ -43,8 +43,11 @@ pub const Value = union(Tag) {
         return self == .number;
     }
 
-    pub fn isString(self: Value) bool {
-        return self.isObj() and self.asObj().is(.string);
+    pub fn is(self: Value, t: Obj.ObjType) bool {
+        return switch (t) {
+            .string => return self.isObj() and self.asObj().is(.string),
+            .function => return self.isObj() and self.asObj().is(.function),
+        };
     }
 
     pub fn eq(a: Value, b: Value) bool {
@@ -60,6 +63,10 @@ pub const Value = union(Tag) {
     pub fn printObj(obj: *Obj, writer: anytype) !void {
         switch (obj.obj_t) {
             .string => try writer.print("{s}", .{obj.asString().bytes}),
+            .function => {
+                const name = if (obj.asFunction().name) |str| str.bytes else "script";
+                try writer.print("<fn {s}>", .{name});
+            },
         }
     }
 };

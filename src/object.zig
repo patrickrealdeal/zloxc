@@ -1,12 +1,12 @@
 const std = @import("std");
 const VM = @import("vm.zig");
 const Value = @import("value.zig");
-const Table = @import("table.zig");
+const Chunk = @import("chunk.zig");
 
 const Obj = @This();
-
-const ObjType = enum {
+pub const ObjType = enum {
     string,
+    function,
 };
 
 obj_t: ObjType,
@@ -26,14 +26,26 @@ pub fn asString(self: *Obj) *String {
     return @alignCast(@fieldParentPtr("obj", self));
 }
 
+pub fn asFunction(self: *Obj) *Function {
+    return @alignCast(@fieldParentPtr("obj", self));
+}
+
 pub fn is(self: *Obj, obj_t: ObjType) bool {
     return self.obj_t == obj_t;
 }
 
 pub fn destroy(obj: *Obj, vm: *VM) void {
-    const self: *String = @fieldParentPtr("obj", obj);
-    vm.allocator.free(self.bytes);
-    vm.allocator.destroy(self);
+    switch (obj.obj_t) {
+        .string => {
+            const self: *String = @fieldParentPtr("obj", obj);
+            vm.allocator.free(self.bytes);
+            vm.allocator.destroy(self);
+        },
+        .function => {
+            const self: *Function = @fieldParentPtr("obj", obj);
+            self.destroy(vm);
+        },
+    }
 }
 
 pub const String = struct {
@@ -69,6 +81,26 @@ pub const String = struct {
     }
 
     pub fn destroy(self: *String, vm: *VM) void {
+        vm.allocator.destroy(self);
+    }
+};
+
+pub const Function = struct {
+    obj: Obj,
+    arity: usize,
+    chunk: Chunk,
+    name: ?*String,
+
+    pub fn allocate(vm: *VM) !*Function {
+        const func = try Obj.create(vm, Function, .function);
+        func.arity = 0;
+        func.chunk = Chunk.init(vm.allocator);
+        func.name = null;
+        return func;
+    }
+
+    pub fn destroy(self: *Function, vm: *VM) void {
+        self.chunk.deinit();
         vm.allocator.destroy(self);
     }
 };
