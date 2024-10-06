@@ -75,7 +75,7 @@ pub fn deinit(self: *Self) void {
 }
 
 pub fn interpret(self: *Self, source: []const u8) !void {
-    std.debug.print("SOURCE: {s}\n", .{source});
+    //std.debug.print("SOURCE: {s}\n", .{source});
 
     const function = try compiler.compile(source, self);
     try self.push(Value{ .obj = &function.obj });
