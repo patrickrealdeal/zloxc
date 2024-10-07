@@ -8,7 +8,7 @@ const VM = @import("vm.zig");
 const TokenType = Token.TokenType;
 const OpCode = Chunk.OpCode;
 
-const debug_print_code = false;
+const debug_print_code = true;
 const u8_max = std.math.maxInt(u8) + 1;
 const CompilerError = error{ CompilerError, TooManyLocalVariables, VarAlreadyDeclared };
 
@@ -27,7 +27,7 @@ const Compiler = struct {
             .func = try Obj.Function.allocate(vm),
             .func_t = func_t,
             .locals = [_]Local{Local{ .name = "" }} ** u8_max,
-            .local_count = 0,
+            .local_count = 1,
             .scope_depth = 0,
             .allocator = vm.allocator,
         };
@@ -59,9 +59,6 @@ pub fn compile(source: []const u8, vm: *VM) !*Obj.Function {
     var parser = Parser.init(vm, &compiler);
     parser.scanner = &scanner;
     try parser.advance();
-
-    compiler.locals[compiler.local_count] = Local{ .name = "", .depth = 0 };
-    compiler.local_count += 1;
 
     while (!try parser.match(.eof)) {
         try parser.declaration();
@@ -103,7 +100,7 @@ const ParseRule = struct {
 
 inline fn getRule(ttype: TokenType) ParseRule {
     return switch (ttype) {
-        .left_paren => ParseRule.init(Parser.grouping, null, .prec_none),
+        .left_paren => ParseRule.init(Parser.grouping, Parser.call, .prec_call),
         .right_paren => ParseRule.init(null, null, .prec_none),
         .left_brace => ParseRule.init(null, null, .prec_none),
         .right_brace => ParseRule.init(null, null, .prec_none),
@@ -225,6 +222,26 @@ const Parser = struct {
         self.emitBytes(@intFromEnum(OpCode.define_global), global);
     }
 
+    fn argumentList(self: *Parser) !u8 {
+        var arg_count: u8 = 0;
+        if (!self.check(.right_paren)) {
+            while (true) {
+                try self.expression();
+
+                if (arg_count == 255) {
+                    self.err("Can't have more than 255 arguments.");
+                    break;
+                }
+
+                arg_count += 1;
+                if (!try self.match(.comma)) break;
+            }
+        }
+
+        try self.consume(.right_paren, "Expect ')' after arguments.");
+        return arg_count;
+    }
+
     fn and_(self: *Parser, can_assign: bool) !void {
         _ = can_assign;
         const end_jump = self.emitJump(@intFromEnum(OpCode.jump_if_false));
@@ -291,14 +308,17 @@ const Parser = struct {
     fn function(self: *Parser, fun_t: FunctionType) !void {
         var compiler = try Compiler.init(self.vm, fun_t, self.compiler);
         self.compiler = &compiler;
+        self.compiler.func.name = try Obj.String.copy(self.vm, self.previous.lexeme);
         self.beginScope();
 
         try self.consume(.left_paren, "Expect '(' after function name.");
+
         // Function parameters
         if (!self.check(.right_paren)) {
             while (true) {
-                if (self.compiler.func.arity > 255) {
+                if (self.compiler.func.arity == 255) {
                     self.errorAtCurrent("Can't have more than 255 parameters.");
+                    break;
                 }
 
                 self.compiler.func.arity += 1;
@@ -309,6 +329,8 @@ const Parser = struct {
         }
 
         try self.consume(.right_paren, "Expect ')' after function name.");
+
+        // Body
         try self.consume(.left_brace, "Expect '{' after function name.");
         try self.block();
 
@@ -353,6 +375,8 @@ const Parser = struct {
             try self.printStatement();
         } else if (try self.match(.keyword_if)) {
             try self.ifStatement();
+        } else if (try self.match(.keyword_return)) {
+            try self.retStatement();
         } else if (try self.match(.keyword_while)) {
             try self.whileStatement();
         } else if (try self.match(.keyword_for)) {
@@ -460,6 +484,20 @@ const Parser = struct {
         try self.expression();
         try self.consume(.semicolon, "Expected ';' after value.");
         self.emitByte(@intFromEnum(OpCode.print));
+    }
+
+    fn retStatement(self: *Parser) !void {
+        if (self.compiler.func_t == .script) {
+            self.err("Can't return from top-level code.");
+        }
+
+        if (try self.match(.semicolon)) {
+            self.emitReturn();
+        } else {
+            try self.expression();
+            try self.consume(.semicolon, "Expect ';' after value.");
+            self.emitByte(@intFromEnum(OpCode.ret));
+        }
     }
 
     fn synchronize(self: *Parser) !void {
@@ -591,6 +629,12 @@ const Parser = struct {
         }
     }
 
+    fn call(self: *Parser, can_assign: bool) !void {
+        _ = can_assign;
+        const arg_count = try self.argumentList();
+        self.emitBytes(@intFromEnum(OpCode.call), arg_count);
+    }
+
     fn emitConstant(self: *Parser, value: Value) !void {
         self.emitBytes(@intFromEnum(OpCode.constant), try self.makeConstant(value));
     }
@@ -658,14 +702,15 @@ const Parser = struct {
         self.emitReturn();
         const func = self.compiler.func;
 
-        if (comptime debug_print_code) {
-            Chunk.disassemble(self.currentChunk(), if (func.name) |name| name.bytes else "<script>");
-            std.debug.print("-----------------\n", .{});
-        }
-
         if (self.compiler.enclosing) |compiler| {
             self.compiler = compiler;
         }
+
+        if (comptime debug_print_code) {
+            Chunk.disassemble(&func.chunk, if (func.name) |name| name.bytes else "<script>");
+            std.debug.print("-----------------\n", .{});
+        }
+
         return func;
     }
 
@@ -675,7 +720,7 @@ const Parser = struct {
 
     fn endScope(self: *Parser) void {
         self.compiler.scope_depth -= 1;
-        while (self.compiler.local_count > 0 and
+        while (self.compiler.local_count > 1 and
             self.compiler.locals[self.compiler.local_count - 1].depth.? > self.compiler.scope_depth)
         {
             self.emitByte(@intFromEnum(OpCode.pop));
@@ -684,6 +729,7 @@ const Parser = struct {
     }
 
     fn emitReturn(self: *Parser) void {
+        self.emitByte(@intFromEnum(OpCode.nil));
         self.emitByte(@intFromEnum(OpCode.ret));
     }
 

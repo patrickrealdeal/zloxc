@@ -27,6 +27,7 @@ pub const OpCode = enum(usize) {
     jump_if_false,
     jump,
     loop,
+    call,
     ret,
 };
 
@@ -103,6 +104,7 @@ pub fn disassembleInstruction(self: *Chunk, offset: usize) usize {
         .jump_if_false => return jumpInstruction("op_jump_if_false", .pos, self, offset),
         .jump => return jumpInstruction("op_jump", .pos, self, offset),
         .loop => return jumpInstruction("op_loop", .neg, self, offset),
+        .call => return byteInstruction("op_call", self, offset),
         .ret => return simpleInstruction("op_ret", offset),
     }
 }

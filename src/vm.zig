@@ -16,13 +16,13 @@ const frames_max = 64;
 const CallFrame = struct {
     function: *Obj.Function,
     ip: usize,
-    slots: []Value,
+    slot_offset: usize,
 
     pub fn init() CallFrame {
         return .{
             .function = undefined,
             .ip = 0,
-            .slots = undefined,
+            .slot_offset = 0,
         };
     }
 };
@@ -32,8 +32,9 @@ const Self = @This();
 //chunk: *Chunk,
 ip: usize,
 frames: [frames_max]CallFrame,
+frame: *CallFrame,
 frame_count: usize,
-stack: [stack_max]Value,
+stack: std.ArrayList(Value),
 stack_top: usize,
 allocator: std.mem.Allocator,
 objects: ?*Obj,
@@ -42,11 +43,12 @@ globals: std.StringHashMap(Value),
 
 pub fn init(allocator: std.mem.Allocator) Self {
     return .{
-        //      .chunk = undefined,
+        // .chunk = undefined,
         .ip = 0,
         .frames = [_]CallFrame{CallFrame.init()} ** frames_max,
+        .frame = undefined,
         .frame_count = 0,
-        .stack = undefined,
+        .stack = std.ArrayList(Value).init(allocator),
         .stack_top = 0,
         .allocator = allocator,
         .objects = null,
@@ -63,30 +65,22 @@ pub fn deinit(self: *Self) void {
     self.freeObjects();
     self.strings.deinit();
     self.globals.deinit();
+    self.stack.deinit();
 
-    for (self.stack) |elem| {
+    for (self.stack.items) |elem| {
         if (@typeInfo(@TypeOf(elem)) == .pointer) {
             self.allocator.free(elem);
         }
     }
-
-    self.stack_top = 0;
-    self.ip = 0;
 }
 
 pub fn interpret(self: *Self, source: []const u8) !void {
-    //std.debug.print("SOURCE: {s}\n", .{source});
+    std.debug.assert(self.stack.items.len == 0);
+    defer std.debug.assert(self.stack.items.len == 0);
 
-    const function = try compiler.compile(source, self);
-    try self.push(Value{ .obj = &function.obj });
-
-    const frame = CallFrame{
-        .function = function,
-        .ip = 0,
-        .slots = self.stack[0..],
-    };
-    self.frames[self.frame_count] = frame;
-    self.frame_count += 1;
+    const func = try compiler.compile(source, self);
+    try self.push(Value{ .obj = &func.obj });
+    try self.call(func, 0);
 
     try self.run();
 }
@@ -96,10 +90,10 @@ fn resetStack(self: *Self) void {
 }
 
 fn run(self: *Self) !void {
-    var frame = self.currentFrame();
+    self.frame = &self.frames[self.frame_count - 1];
     while (true) {
         if (comptime debug_trace_execution) {
-            _ = Chunk.disassembleInstruction(frame.function.chunk, frame.ip);
+            _ = Chunk.disassembleInstruction(self.frame.function.chunk, self.frame.ip);
         }
 
         if (comptime debug_trace_stack) {
@@ -114,9 +108,9 @@ fn run(self: *Self) !void {
             },
             .negate => {
                 if (self.peek(0) != .number) {
-                    self.runtimeErr("Operand must be a number!", .{});
+                    try self.runtimeErr("Operand must be a number!", .{});
                 }
-                self.stack[self.stack_top - 1].number = -self.stack[self.stack_top - 1].number;
+                self.stack.items[self.stack.items.len - 1].number = -self.stack.items[self.stack.items.len - 1].number;
             },
             .add => try self.binaryOp(.add),
             .sub => try self.binaryOp(.sub),
@@ -146,7 +140,7 @@ fn run(self: *Self) !void {
             .get_global => {
                 const name = self.readString();
                 const value = self.globals.get(name.bytes) orelse {
-                    self.runtimeErr("Undefined variable {s}.\n", .{name.bytes});
+                    try self.runtimeErr("Undefined variable {s}.\n", .{name.bytes});
                     return VmError.UndefinedVariable;
                 };
                 try self.push(value);
@@ -154,61 +148,63 @@ fn run(self: *Self) !void {
             .set_global => {
                 const name = self.readString();
                 if (!self.globals.contains(name.bytes)) {
-                    self.runtimeErr("Undefined variable {s}.\n", .{name.bytes});
+                    try self.runtimeErr("Undefined variable {s}.\n", .{name.bytes});
                     return VmError.UndefinedVariable;
                 }
                 try self.globals.put(name.bytes, self.peek(0));
             },
             .get_local => {
                 const slot = self.readByte();
-                try self.push(frame.slots[slot]);
+                try self.push(self.stack.items[self.frame.slot_offset + slot]);
             },
             .set_local => {
                 const slot = self.readByte();
-                frame.slots[slot] = self.peek(0);
+                self.stack.items[self.frame.slot_offset + slot] = self.peek(0);
             },
             .jump_if_false => {
                 const offset = self.readU16();
-                if (isFalsey(self.peek(0))) frame.ip += offset;
+                if (isFalsey(self.peek(0))) self.frame.ip += offset;
             },
             .jump => {
                 const offset = self.readU16();
-                frame.ip += offset;
+                self.frame.ip += offset;
             },
             .loop => {
                 const offset = self.readU16();
-                frame.ip -= offset;
+                self.frame.ip -= offset;
+            },
+            .call => {
+                const arg_count = self.readByte();
+                try self.callValue(self.peek(arg_count), arg_count);
+                self.frame = &self.frames[self.frame_count - 1];
             },
             .ret => {
-                //_ = self.pop();
-                //    Value.printValue(self.pop());
-                //    std.debug.print("\n", .{});
-                return;
+                const result = self.pop();
+                self.frame_count -= 1;
+
+                if (self.frame_count == 0) {
+                    _ = self.pop();
+                    return;
+                }
+
+                self.stack.items.len -= self.stack.items.len - self.frame.slot_offset;
+                try self.push(result);
+                self.frame = &self.frames[self.frame_count - 1];
             },
         }
     }
 }
 
-fn currentFrame(self: *Self) *CallFrame {
-    return &self.frames[self.frame_count - 1];
-}
-
-fn currentChunk(self: *Self) *Chunk {
-    return self.currentFrame().function.chunk;
-}
-
 fn readByte(self: *Self) usize {
-    var frame = self.currentFrame();
-    const byte = frame.function.chunk.code.items[frame.ip];
-    frame.ip += 1;
+    const byte = self.frame.function.chunk.code.items[self.frame.ip];
+    self.frame.ip += 1;
     return byte;
 }
 
 fn readU16(self: *Self) usize {
-    var frame = self.currentFrame();
-    const byte1 = @as(u16, frame.function.chunk.code.items[frame.ip]);
-    const byte2 = frame.function.chunk.code.items[frame.ip + 1];
-    frame.ip += 2;
+    const byte1 = @as(u16, self.frame.function.chunk.code.items[self.frame.ip]);
+    const byte2 = self.frame.function.chunk.code.items[self.frame.ip + 1];
+    self.frame.ip += 2;
     return (byte1 << 8) | byte2;
 }
 
@@ -217,18 +213,19 @@ inline fn readString(self: *Self) *Obj.String {
 }
 
 fn readConstant(self: *Self) Value {
-    const frame = &self.frames[self.frame_count - 1];
-    return frame.function.chunk.constants.items[self.readByte()];
+    return self.frame.function.chunk.constants.items[self.readByte()];
 }
 
 fn push(self: *Self, value: Value) !void {
-    self.stack[self.stack_top] = value;
-    self.stack_top += 1;
+    try self.stack.append(value);
 }
 
 fn pop(self: *Self) Value {
-    self.stack_top -= 1;
-    return self.stack[self.stack_top];
+    return self.stack.pop();
+}
+
+fn stackTop(self: *Self) !usize {
+    return self.stack.items.len;
 }
 
 fn isFalsey(value: Value) bool {
@@ -266,31 +263,68 @@ fn binaryOp(self: *Self, op: BinaryOp) !void {
 
         try self.push(result);
     } else {
-        self.runtimeErr("Operands must be two numbers or strings {any} {any}", .{ self.peek(0), self.peek(1) });
+        try self.runtimeErr("Operands must be two numbers or strings {any} {any}", .{ self.peek(0), self.peek(1) });
         return VmError.RuntimeError;
     }
 }
 
 fn peek(self: *Self, distance: usize) Value {
-    return self.stack[self.stack_top - distance - 1];
+    return self.stack.items[self.stack.items.len - distance - 1];
+}
+
+fn call(self: *Self, func: *Obj.Function, arg_count: usize) !void {
+    if (arg_count != func.arity) {
+        return self.runtimeErr("Expected {d} arguments but got: {d}", .{ func.arity, arg_count });
+    }
+
+    if (self.frame_count == frames_max) {
+        try self.runtimeErr("Stack Overflow.", .{});
+    }
+
+    // Add a new call frame
+    const frame: *CallFrame = &self.frames[self.frame_count];
+    frame.function = func;
+    frame.ip = 0;
+    frame.slot_offset = self.stack.items.len - arg_count - 1;
+    self.frame_count += 1;
+}
+
+fn callValue(self: *Self, callee: Value, arg_count: usize) !void {
+    switch (callee) {
+        .obj => |obj| {
+            switch (obj.obj_t) {
+                .function => try self.call(obj.asFunction(), arg_count),
+                else => try self.runtimeErr("Can only call functions.", .{}),
+            }
+        },
+        else => try self.runtimeErr("Can only call functions.", .{}),
+    }
 }
 
 inline fn traceStackExecution(self: *Self) void {
     const print = std.debug.print;
     print("          ", .{});
-    for (self.stack) |value| {
-        print("[{any}]", .{value});
+    for (self.stack.items) |value| {
+        print("[{}]", .{value});
     }
     print("\n", .{});
 }
 
-fn runtimeErr(self: *Self, comptime fmt: []const u8, args: anytype) void {
+fn runtimeErr(self: *Self, comptime fmt: []const u8, args: anytype) !void {
     const errWriter = std.io.getStdErr().writer();
     errWriter.print(fmt ++ "\n", args) catch {};
 
-    const frame = self.frames[self.frame_count - 1];
-    errWriter.print("[line {d}] in script.\n", .{frame.function.chunk.lines.items[frame.ip]}) catch {};
+    while (self.frame_count > 0) {
+        const frame = self.frame;
+        const func = frame.function;
+        const line = func.chunk.lines.items[frame.ip];
+        const name = if (func.name) |name| name.bytes else "<script>";
+        errWriter.print("[line {d}] in {s}.\n", .{ line, name }) catch {};
+        self.frame_count -= 1;
+    }
+
     self.resetStack();
+    return VmError.RuntimeError;
 }
 
 fn freeObjects(self: *Self) void {
