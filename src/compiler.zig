@@ -17,6 +17,7 @@ const Compiler = struct {
     func: *Obj.Function,
     func_t: FunctionType,
     locals: [u8_max]Local,
+    upvalues: std.ArrayList(Upvalue),
     local_count: u8,
     scope_depth: u32,
     allocator: std.mem.Allocator,
@@ -27,10 +28,15 @@ const Compiler = struct {
             .func = try Obj.Function.allocate(vm),
             .func_t = func_t,
             .locals = [_]Local{Local{ .name = "" }} ** u8_max,
-            .local_count = 1,
+            .upvalues = std.ArrayList(Upvalue).init(vm.allocator),
+            .local_count = 1, // claim slot zero for VM internal use
             .scope_depth = 0,
             .allocator = vm.allocator,
         };
+    }
+
+    pub fn deinit(self: *Compiler) void {
+        self.upvalues.deinit();
     }
 
     pub fn addLocal(self: *Compiler, name: Token) !void {
@@ -41,11 +47,33 @@ const Compiler = struct {
         self.locals[self.local_count] = Local{ .name = name.lexeme, .depth = null };
         self.local_count += 1;
     }
+
+    fn addUpvalue(self: *Compiler, index: u8, is_local: bool) !u8 {
+        for (self.upvalues.items, 0..) |upv, i| {
+            if (upv.index == index and upv.is_local == is_local) {
+                return @as(u8, @intCast(i));
+            }
+        }
+
+        if (self.upvalues.items.len == u8_max) {
+            return CompilerError.TooManyLocalVariables;
+        }
+
+        try self.upvalues.append(Upvalue{ .is_local = is_local, .index = index });
+        self.func.upvalue_count += 1;
+        return @as(u8, @intCast(self.upvalues.items.len - 1));
+    }
 };
 
 const Local = struct {
     name: []const u8,
     depth: ?u32 = null,
+    is_captured: bool = false,
+};
+
+const Upvalue = struct {
+    is_local: bool,
+    index: u8,
 };
 
 const FunctionType = enum {
@@ -55,6 +83,7 @@ const FunctionType = enum {
 
 pub fn compile(source: []const u8, vm: *VM) !*Obj.Function {
     var compiler = try Compiler.init(vm, .script, null);
+    compiler.deinit();
     var scanner = Scanner.init(source);
     var parser = Parser.init(vm, &compiler);
     parser.scanner = &scanner;
@@ -307,6 +336,7 @@ const Parser = struct {
 
     fn function(self: *Parser, fun_t: FunctionType) !void {
         var compiler = try Compiler.init(self.vm, fun_t, self.compiler);
+        defer compiler.deinit();
         self.compiler = &compiler;
         self.compiler.func.name = try Obj.String.copy(self.vm, self.previous.lexeme);
         self.beginScope();
@@ -335,7 +365,12 @@ const Parser = struct {
         try self.block();
 
         const func = self.endCompiler();
-        self.emitBytes(@intFromEnum(OpCode.constant), try self.makeConstant(Value{ .obj = &func.obj }));
+        self.emitBytes(@intFromEnum(OpCode.closure), try self.makeConstant(Value{ .obj = &func.obj }));
+
+        for (compiler.upvalues.items) |upvalue| {
+            self.emitByte(if (upvalue.is_local) 1 else 0);
+            self.emitByte(upvalue.index);
+        }
     }
 
     fn funDeclaration(self: *Parser) !void {
@@ -559,11 +594,16 @@ const Parser = struct {
     fn namedVariable(self: *Parser, name: Token, can_assign: bool) !void {
         var get_op: ?OpCode = null;
         var set_op: ?OpCode = null;
+        var arg: u8 = undefined;
 
-        var arg: ?u8 = self.resolveLocal(self.compiler, name);
-        if (arg) |_| {
+        if (self.resolveLocal(self.compiler, name)) |local| {
+            arg = local;
             get_op = .get_local;
             set_op = .set_local;
+        } else if (try self.resolveUpvalue(self.compiler, name)) |upvalue| {
+            arg = upvalue;
+            get_op = .get_upvalue;
+            set_op = .set_upvalue;
         } else {
             arg = try self.identifierConstant(name);
             get_op = .get_global;
@@ -572,9 +612,9 @@ const Parser = struct {
 
         if (can_assign and try self.match(.equal)) {
             try self.expression();
-            self.emitBytes(@as(u8, @intCast(@intFromEnum(set_op.?))), arg.?);
+            self.emitBytes(@as(u8, @intCast(@intFromEnum(set_op.?))), arg);
         } else {
-            self.emitBytes(@as(u8, @intCast(@intFromEnum(get_op.?))), arg.?);
+            self.emitBytes(@as(u8, @intCast(@intFromEnum(get_op.?))), arg);
         }
     }
 
@@ -588,6 +628,19 @@ const Parser = struct {
                     self.err("Can't read local variable in its own initializer.");
                 }
                 return @as(u8, @intCast(i));
+            }
+        }
+
+        return null;
+    }
+
+    fn resolveUpvalue(self: *Parser, compiler: *Compiler, name: Token) !?u8 {
+        if (compiler.enclosing) |enclosing| {
+            if (self.resolveLocal(enclosing, name)) |local| {
+                enclosing.locals[local].is_captured = true;
+                return try compiler.addUpvalue(local, true);
+            } else if (try self.resolveUpvalue(enclosing, name)) |upvalue| {
+                return try compiler.addUpvalue(upvalue, true);
             }
         }
 
@@ -723,7 +776,11 @@ const Parser = struct {
         while (self.compiler.local_count > 1 and
             self.compiler.locals[self.compiler.local_count - 1].depth.? > self.compiler.scope_depth)
         {
-            self.emitByte(@intFromEnum(OpCode.pop));
+            if (self.compiler.locals[self.compiler.local_count - 1].is_captured) {
+                self.emitByte(@intFromEnum(OpCode.close_upvalue));
+            } else {
+                self.emitByte(@intFromEnum(OpCode.pop));
+            }
             self.compiler.local_count -= 1;
         }
     }

@@ -1,6 +1,18 @@
 fun fib(n) {
   if (n < 2) return n;
-  return fib(n - 2) + fib(n - 1);
+  var a = 0;
+  var b = 1;
+
+for (var i = 2; i <= n; i = i + 1) {
+    var temp = a;
+    a = b;
+    b = temp + b;
+  }
+  print i;
+  return a;
 }
 
-print fib(35);
+var start = clock();
+print fib(5); // This will print the 35th Fibonacci number
+print clock() - start;
+

@@ -47,6 +47,9 @@ pub const Value = union(Tag) {
         return switch (t) {
             .string => return self.isObj() and self.asObj().is(.string),
             .function => return self.isObj() and self.asObj().is(.function),
+            .native => return self.isObj() and self.asObj().is(.native),
+            .closure => return self.isObj() and self.asObj().is(.closure),
+            .upvalue => return self.isObj() and self.asObj().is(.upvalue),
         };
     }
 
@@ -66,6 +69,15 @@ pub const Value = union(Tag) {
             .function => {
                 const name = if (obj.asFunction().name) |str| str.bytes else "script";
                 try writer.print("<fn {s}>", .{name});
+            },
+            .native => {
+                try writer.print("<native fn", .{});
+            },
+            .closure => {
+                try writer.print("<fn {s}>", .{obj.asClosure().func.name.?.bytes});
+            },
+            .upvalue => {
+                try writer.print("upvalue", .{});
             },
         }
     }

@@ -24,10 +24,14 @@ pub const OpCode = enum(usize) {
     set_global,
     get_local,
     set_local,
+    get_upvalue,
+    set_upvalue,
     jump_if_false,
     jump,
     loop,
     call,
+    closure,
+    close_upvalue,
     ret,
 };
 
@@ -101,10 +105,14 @@ pub fn disassembleInstruction(self: *Chunk, offset: usize) usize {
         .set_global => return constantInstruction("op_set_global", self, offset),
         .get_local => return byteInstruction("op_get_local", self, offset),
         .set_local => return byteInstruction("op_set_local", self, offset),
+        .get_upvalue => return byteInstruction("op_get_upvalue", self, offset),
+        .set_upvalue => return byteInstruction("op_set_upvalue", self, offset),
         .jump_if_false => return jumpInstruction("op_jump_if_false", .pos, self, offset),
         .jump => return jumpInstruction("op_jump", .pos, self, offset),
         .loop => return jumpInstruction("op_loop", .neg, self, offset),
         .call => return byteInstruction("op_call", self, offset),
+        .closure => return closureInstruction("op_closure", self, offset),
+        .close_upvalue => return simpleInstruction("op_close_upvalue", offset),
         .ret => return simpleInstruction("op_ret", offset),
     }
 }
@@ -119,6 +127,27 @@ fn constantInstruction(name: []const u8, chunk: *Chunk, offset: usize) usize {
     const constant = chunk.constants.items[constant_idx];
     std.debug.print("{s: <16} {d:4} '{d}'\n", .{ name, constant, constant_idx });
     return offset + 2;
+}
+
+fn closureInstruction(name: []const u8, chunk: *Chunk, offset: usize) usize {
+    var new_offset: usize = offset + 1;
+    const constant = chunk.code.items[new_offset];
+    new_offset += 1;
+    std.debug.print("{s} {} '{}'\n", .{ name, constant, chunk.code.items[constant] });
+
+    // Disassemble upvalues
+    const func = chunk.constants.items[constant].asObj().asFunction();
+    var i: usize = 0;
+    while (i < func.upvalue_count) : (i += 1) {
+        const is_local = chunk.code.items[new_offset] != 1;
+        const value_t = if (is_local) "local" else "upvalue";
+        new_offset += 1;
+        const index = chunk.code.items[new_offset];
+        new_offset += 1;
+        std.debug.print("       {d} | {s} '{d}'\n", .{ new_offset - 2, value_t, index });
+    }
+
+    return new_offset;
 }
 
 fn byteInstruction(name: []const u8, chunk: *Chunk, offset: usize) usize {
