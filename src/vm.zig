@@ -72,12 +72,6 @@ pub fn deinit(self: *Self) void {
     self.strings.deinit();
     self.globals.deinit();
     self.stack.deinit();
-
-    for (self.stack.items) |elem| {
-        if (@typeInfo(@TypeOf(elem)) == .pointer) {
-            self.allocator.free(elem);
-        }
-    }
 }
 
 pub fn interpret(self: *Self, source: []const u8) !void {
@@ -200,7 +194,7 @@ fn run(self: *Self) !void {
                 self.frame = &self.frames[self.frame_count - 1];
             },
             .closure => {
-                const func = self.readConstant().asObj().asFunction();
+                const func = self.readConstant().asObj().as(Obj.Function);
                 const closure = try Obj.Closure.allocate(self, func);
                 self.push(Value{ .obj = &closure.obj });
 
@@ -246,7 +240,7 @@ fn readU16(self: *Self) usize {
 }
 
 inline fn readString(self: *Self) *Obj.String {
-    return self.readConstant().asObj().asString();
+    return self.readConstant().asObj().as(Obj.String);
 }
 
 fn readConstant(self: *Self) Value {
@@ -274,8 +268,8 @@ fn isFalsey(value: Value) bool {
 }
 
 fn concat(self: *Self) !void {
-    const b = self.pop().asObj().asString();
-    const a = self.pop().asObj().asString();
+    const b = self.pop().asObj().as(Obj.String);
+    const a = self.pop().asObj().as(Obj.String);
     const res = try std.mem.concat(self.allocator, u8, &[_][]const u8{ a.bytes, b.bytes });
     const str = try Obj.String.take(self, res);
     self.push(Value{ .obj = &str.obj });
@@ -331,12 +325,12 @@ fn callValue(self: *Self, callee: Value, arg_count: usize) !void {
         .obj => |obj| {
             switch (obj.obj_t) {
                 .native => {
-                    const native = obj.asNative().func;
+                    const native = obj.as(Obj.Native).func;
                     const result = native(@truncate(arg_count));
                     self.stack.items.len -= arg_count + 1;
                     self.push(result);
                 },
-                .closure => return self.call(obj.asClosure(), arg_count),
+                .closure => return self.call(obj.as(Obj.Closure), arg_count),
                 else => try self.runtimeErr("Can only call functions.", .{}),
             }
         },
@@ -356,6 +350,7 @@ fn captureUpvalue(self: *Self, local: *Value) !*Obj.Upvalue {
         }
 
         if (upvalue) |uv| if (uv.location == local) return uv;
+
         const created_upvalue = try Obj.Upvalue.allocate(self, local);
         if (prev_upvalue) |puv| {
             puv.next = created_upvalue;

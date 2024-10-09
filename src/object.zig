@@ -25,23 +25,7 @@ pub fn create(vm: *VM, comptime T: type, obj_t: ObjType) !*T {
     return ptr_t;
 }
 
-pub fn asString(self: *Obj) *String {
-    return @alignCast(@fieldParentPtr("obj", self));
-}
-
-pub fn asFunction(self: *Obj) *Function {
-    return @alignCast(@fieldParentPtr("obj", self));
-}
-
-pub fn asNative(self: *Obj) *Native {
-    return @alignCast(@fieldParentPtr("obj", self));
-}
-
-pub fn asClosure(self: *Obj) *Closure {
-    return @alignCast(@fieldParentPtr("obj", self));
-}
-
-pub fn asUpvalue(self: *Obj) *Upvalue {
+pub fn as(self: *Obj, comptime T: type) *T {
     return @alignCast(@fieldParentPtr("obj", self));
 }
 

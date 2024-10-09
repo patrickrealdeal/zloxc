@@ -1,5 +1,6 @@
 const std = @import("std");
 const Value = @import("value.zig").Value;
+const Obj = @import("object.zig");
 
 const Chunk = @This();
 
@@ -136,7 +137,7 @@ fn closureInstruction(name: []const u8, chunk: *Chunk, offset: usize) usize {
     std.debug.print("{s} {} '{}'\n", .{ name, constant, chunk.code.items[constant] });
 
     // Disassemble upvalues
-    const func = chunk.constants.items[constant].asObj().asFunction();
+    const func = chunk.constants.items[constant].asObj().as(Obj.Function);
     var i: usize = 0;
     while (i < func.upvalue_count) : (i += 1) {
         const is_local = chunk.code.items[new_offset] != 1;

@@ -640,7 +640,7 @@ const Parser = struct {
                 enclosing.locals[local].is_captured = true;
                 return try compiler.addUpvalue(local, true);
             } else if (try self.resolveUpvalue(enclosing, name)) |upvalue| {
-                return try compiler.addUpvalue(upvalue, true);
+                return try compiler.addUpvalue(upvalue, false);
             }
         }
 

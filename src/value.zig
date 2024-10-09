@@ -55,7 +55,7 @@ pub const Value = union(Tag) {
 
     pub fn eq(a: Value, b: Value) bool {
         if (std.meta.activeTag(a) == .obj and std.meta.activeTag(b) == .obj) {
-            return std.mem.eql(u8, a.obj.asString().bytes, b.obj.asString().bytes);
+            return std.mem.eql(u8, a.obj.as(Obj.String).bytes, b.obj.as(Obj.String).bytes);
         }
 
         // std.meta.eql checks Tag equality
@@ -65,20 +65,14 @@ pub const Value = union(Tag) {
 
     pub fn printObj(obj: *Obj, writer: anytype) !void {
         switch (obj.obj_t) {
-            .string => try writer.print("{s}", .{obj.asString().bytes}),
+            .string => try writer.print("{s}", .{obj.as(Obj.String).bytes}),
             .function => {
-                const name = if (obj.asFunction().name) |str| str.bytes else "script";
+                const name = if (obj.as(Obj.Function).name) |str| str.bytes else "script";
                 try writer.print("<fn {s}>", .{name});
             },
-            .native => {
-                try writer.print("<native fn", .{});
-            },
-            .closure => {
-                try writer.print("<fn {s}>", .{obj.asClosure().func.name.?.bytes});
-            },
-            .upvalue => {
-                try writer.print("upvalue", .{});
-            },
+            .native => try writer.print("<native fn", .{}),
+            .closure => try writer.print("<fn {s}>", .{obj.as(Obj.Closure).func.name.?.bytes}),
+            .upvalue => try writer.print("upvalue", .{}),
         }
     }
 };
