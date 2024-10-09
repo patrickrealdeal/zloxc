@@ -83,7 +83,6 @@ const FunctionType = enum {
 
 pub fn compile(source: []const u8, vm: *VM) !*Obj.Function {
     var compiler = try Compiler.init(vm, .script, null);
-    compiler.deinit();
     var scanner = Scanner.init(source);
     var parser = Parser.init(vm, &compiler);
     parser.scanner = &scanner;
