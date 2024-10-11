@@ -71,7 +71,10 @@ pub const Value = union(Tag) {
                 try writer.print("<fn {s}>", .{name});
             },
             .native => try writer.print("<native fn", .{}),
-            .closure => try writer.print("<fn {s}>", .{obj.as(Obj.Closure).func.name.?.bytes}),
+            .closure => {
+                const name = if (obj.as(Obj.Closure).func.name) |str| str.bytes else "script";
+                try writer.print("<fn {s}>", .{name});
+            },
             .upvalue => try writer.print("upvalue", .{}),
         }
     }

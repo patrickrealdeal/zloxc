@@ -5,14 +5,14 @@ const Token = @import("token.zig");
 const Value = @import("value.zig").Value;
 const Obj = @import("object.zig");
 const VM = @import("vm.zig");
+const debug = @import("debug.zig");
 const TokenType = Token.TokenType;
 const OpCode = Chunk.OpCode;
 
-const debug_print_code = true;
 const u8_max = std.math.maxInt(u8) + 1;
 const CompilerError = error{ CompilerError, TooManyLocalVariables, VarAlreadyDeclared };
 
-const Compiler = struct {
+pub const Compiler = struct {
     enclosing: ?*Compiler,
     func: *Obj.Function,
     func_t: FunctionType,
@@ -86,6 +86,7 @@ pub fn compile(source: []const u8, vm: *VM) !*Obj.Function {
     var scanner = Scanner.init(source);
     var parser = Parser.init(vm, &compiler);
     parser.scanner = &scanner;
+    vm.parser = &parser;
     try parser.advance();
 
     while (!try parser.match(.eof)) {
@@ -171,7 +172,7 @@ inline fn getRule(ttype: TokenType) ParseRule {
     };
 }
 
-const Parser = struct {
+pub const Parser = struct {
     current: Token,
     previous: Token,
     scanner: *Scanner,
@@ -758,7 +759,7 @@ const Parser = struct {
             self.compiler = compiler;
         }
 
-        if (comptime debug_print_code) {
+        if (comptime debug.print_code) {
             Chunk.disassemble(&func.chunk, if (func.name) |name| name.bytes else "<script>");
             std.debug.print("-----------------\n", .{});
         }

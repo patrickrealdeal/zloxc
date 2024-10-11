@@ -1,5 +1,6 @@
 const std = @import("std");
 const VM = @import("vm.zig");
+const GCAllocator = @import("memory.zig").GCAllocator;
 
 const errout = std.io.getStdErr().writer();
 const stdout = std.io.getStdOut().writer();

@@ -6,14 +6,31 @@ const Obj = @import("object.zig");
 const FixedCapacityStack = @import("stack.zig").FixedCapacityStack;
 const NativeFn = Obj.Native.NativeFn;
 const OpCode = Chunk.OpCode;
+const GCAllocator = @import("memory.zig").GCAllocator;
+const Parser = @import("compiler.zig").Parser;
+const debug = @import("debug.zig");
 
 const u8_max = std.math.maxInt(u8) + 1;
 
-const debug_trace_execution = false;
-const debug_trace_stack = false;
-const debug_gc = false;
 const stack_max = frames_max * u8_max;
 const frames_max = 64;
+
+const Self = @This();
+
+ip: usize,
+frames: [frames_max]CallFrame,
+frame: *CallFrame,
+frame_count: usize,
+stack: FixedCapacityStack(Value),
+stack_top: usize,
+allocator: std.mem.Allocator,
+gc_allocator: GCAllocator,
+objects: ?*Obj,
+open_upvalues: ?*Obj.Upvalue, // the head pointer goes right inside the main VM struct
+strings: std.StringHashMap(*Obj.String),
+globals: std.AutoHashMap(*Obj.String, Value),
+next_gray: ?*Obj,
+parser: ?*Parser,
 
 const CallFrame = struct {
     closure: *Obj.Closure,
@@ -29,33 +46,22 @@ const CallFrame = struct {
     }
 };
 
-const Self = @This();
-
-ip: usize,
-frames: [frames_max]CallFrame,
-frame: *CallFrame,
-frame_count: usize,
-stack: FixedCapacityStack(Value),
-stack_top: usize,
-allocator: std.mem.Allocator,
-objects: ?*Obj,
-open_upvalues: ?*Obj.Upvalue, // the head pointer goes right inside the main VM struct
-strings: std.StringHashMap(*Obj.String),
-globals: std.StringHashMap(Value),
-
-pub fn init(allocator: std.mem.Allocator) !Self {
+pub fn init(backing_allocator: std.mem.Allocator) !Self {
     var vm = Self{
         .ip = 0,
         .frames = [_]CallFrame{CallFrame.init()} ** frames_max,
         .frame = undefined,
         .frame_count = 0,
-        .stack = try FixedCapacityStack(Value).init(allocator, stack_max),
+        .stack = try FixedCapacityStack(Value).init(backing_allocator, stack_max),
         .stack_top = 0,
-        .allocator = allocator,
+        .allocator = backing_allocator,
+        .gc_allocator = undefined,
         .objects = null,
         .open_upvalues = null,
-        .strings = std.StringHashMap(*Obj.String).init(allocator),
-        .globals = std.StringHashMap(Value).init(allocator),
+        .strings = std.StringHashMap(*Obj.String).init(backing_allocator),
+        .globals = std.AutoHashMap(*Obj.String, Value).init(backing_allocator),
+        .next_gray = null,
+        .parser = null,
     };
 
     try vm.defineNative("clock", clockNative);
@@ -64,7 +70,7 @@ pub fn init(allocator: std.mem.Allocator) !Self {
 }
 
 pub fn deinit(self: *Self) void {
-    if (comptime debug_gc) {
+    if (comptime debug.log_gc) {
         std.debug.print("-----------------\nUninitializing VM\n", .{});
     }
     self.resetStack();
@@ -95,11 +101,11 @@ fn resetStack(self: *Self) void {
 fn run(self: *Self) !void {
     self.frame = &self.frames[self.frame_count - 1];
     while (true) {
-        if (comptime debug_trace_execution) {
-            _ = Chunk.disassembleInstruction(self.frame.closure.func.chunk, self.frame.ip);
+        if (comptime debug.trace_execution) {
+            _ = Chunk.disassembleInstruction(&self.frame.closure.func.chunk, self.frame.ip);
         }
 
-        if (comptime debug_trace_stack) {
+        if (comptime debug.trace_stack) {
             self.traceStackExecution();
         }
 
@@ -137,12 +143,12 @@ fn run(self: *Self) !void {
             .pop => _ = self.pop(),
             .define_global => {
                 const name = self.readString();
-                try self.globals.put(name.bytes, self.peek(0));
+                try self.globals.put(name, self.peek(0));
                 _ = self.pop();
             },
             .get_global => {
                 const name = self.readString();
-                const value = self.globals.get(name.bytes) orelse {
+                const value = self.globals.get(name) orelse {
                     try self.runtimeErr("Undefined variable {s}.\n", .{name.bytes});
                     return VmError.UndefinedVariable;
                 };
@@ -150,11 +156,11 @@ fn run(self: *Self) !void {
             },
             .set_global => {
                 const name = self.readString();
-                if (!self.globals.contains(name.bytes)) {
+                if (!self.globals.contains(name)) {
                     try self.runtimeErr("Undefined variable {s}.\n", .{name.bytes});
                     return VmError.UndefinedVariable;
                 }
-                try self.globals.put(name.bytes, self.peek(0));
+                try self.globals.put(name, self.peek(0));
             },
             .get_local => {
                 const slot = self.readByte();
@@ -409,7 +415,7 @@ fn defineNative(self: *Self, name: []const u8, func: NativeFn) !void {
     const native = try Obj.Native.allocate(self, func);
     const func_value = Value{ .obj = &native.obj };
     self.push(func_value);
-    try self.globals.put(str.bytes, func_value);
+    try self.globals.put(str, func_value);
     _ = self.pop();
     _ = self.pop();
 }
@@ -418,7 +424,7 @@ fn freeObjects(self: *Self) void {
     var obj = self.objects;
     var total_objects: u64 = 0;
     while (obj) |object| {
-        if (comptime debug_gc) {
+        if (comptime debug.log_gc) {
             total_objects += 1;
         }
         const next = object.next;
@@ -426,7 +432,7 @@ fn freeObjects(self: *Self) void {
         obj = next;
     }
 
-    if (comptime debug_gc) {
+    if (comptime debug.log_gc) {
         std.debug.print("Objects freed {d}\n", .{total_objects});
     }
 }

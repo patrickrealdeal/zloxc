@@ -14,12 +14,16 @@ pub const ObjType = enum {
 
 obj_t: ObjType,
 next: ?*Obj,
+is_marked: bool,
+next_gray: ?*Obj,
 
 pub fn create(vm: *VM, comptime T: type, obj_t: ObjType) !*T {
     const ptr_t = try vm.allocator.create(T);
     ptr_t.obj = Obj{
         .obj_t = obj_t,
         .next = vm.objects,
+        .is_marked = false,
+        .next_gray = null,
     };
     vm.objects = &ptr_t.obj;
     return ptr_t;
