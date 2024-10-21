@@ -8,7 +8,6 @@ const NativeFn = Obj.Native.NativeFn;
 const OpCode = Chunk.OpCode;
 const GCAllocator = @import("memory.zig").GCAllocator;
 const Parser = @import("compiler.zig").Parser;
-const Table = @import("table.zig").Table;
 const debug = @import("debug.zig");
 
 const u8_max = std.math.maxInt(u8) + 1;
@@ -23,11 +22,13 @@ frames: [frames_max]CallFrame,
 frame: *CallFrame,
 frame_count: usize,
 stack: FixedCapacityStack(Value),
+stack_top: usize,
 allocator: std.mem.Allocator,
+gc_allocator: GCAllocator,
 objects: ?*Obj,
 open_upvalues: ?*Obj.Upvalue, // the head pointer goes right inside the main VM struct
-strings: Table(*Obj.String, Value),
-globals: Table(*Obj.String, Value),
+strings: std.StringHashMap(*Obj.String),
+globals: std.AutoHashMap(*Obj.String, Value),
 gray_stack: std.ArrayList(*Obj),
 parser: ?*Parser,
 
@@ -45,35 +46,54 @@ const CallFrame = struct {
     }
 };
 
-pub fn init(gc_allocator: std.mem.Allocator) !*Self {
-    const gc: *GCAllocator = @ptrCast(@alignCast(gc_allocator.ptr));
-    const vm = try gc.parent_allocator.create(Self);
-
-    vm.* = .{
-        .stack = try FixedCapacityStack(Value).init(gc_allocator, stack_max),
-        .strings = Table(*Obj.String, Value).init(gc_allocator),
-        .globals = Table(*Obj.String, Value).init(gc_allocator),
-        .gray_stack = std.ArrayList(*Obj).init(gc_allocator),
+pub fn create(allocator: std.mem.Allocator) Self {
+    return .{
         .ip = 0,
-        .allocator = gc_allocator,
-        .frames = [_]CallFrame{CallFrame.init()} ** frames_max,
+        .frames = undefined,
         .frame = undefined,
         .frame_count = 0,
+        .stack = undefined,
+        .stack_top = 0,
+        .allocator = allocator,
+        .gc_allocator = undefined,
         .objects = null,
         .open_upvalues = null,
+        .strings = undefined, //std.StringHashMap(*Obj.String).init(backing_allocator),
+        .globals = undefined, // std.AutoHashMap(*Obj.String, Value).init(backing_allocator),
+        .gray_stack = undefined,
         .parser = null,
     };
+}
 
+pub fn init(vm: *Self) !void {
+    vm.gc_allocator = GCAllocator.init(vm.allocator);
+    vm.stack = try FixedCapacityStack(Value).init(vm.allocator, stack_max);
+    vm.strings = std.StringHashMap(*Obj.String).init(vm.allocator);
+    vm.globals = std.AutoHashMap(*Obj.String, Value).init(vm.allocator);
+    vm.gray_stack = std.ArrayList(*Obj).init(vm.allocator);
+
+    vm.ip = 0;
+    vm.frames = [_]CallFrame{CallFrame.init()} ** frames_max;
+    vm.frame = undefined;
+    vm.frame_count = 0;
+    vm.stack_top = 0;
+    vm.objects = null;
+    vm.open_upvalues = null;
+    vm.parser = null;
+    vm.gc_allocator.vm = vm;
+
+    //const allocator = vm.gc_allocator.allocator();
+    //vm.allocator = allocator;
     try vm.defineNative("clock", clockNative);
-    gc.vm = vm;
 
-    return vm;
+    //return vm;
 }
 
 pub fn deinit(self: *Self) void {
     if (comptime debug.log_gc) {
         std.debug.print("-----------------\nUninitializing VM\n", .{});
     }
+    self.resetStack();
     self.freeObjects();
     self.strings.deinit();
     self.globals.deinit();
@@ -94,6 +114,10 @@ pub fn interpret(self: *Self, source: []const u8) !void {
     try self.call(closure, 0);
 
     try self.run();
+}
+
+fn resetStack(self: *Self) void {
+    self.stack_top = 0;
 }
 
 fn run(self: *Self) !void {
@@ -141,7 +165,7 @@ fn run(self: *Self) !void {
             .pop => _ = self.pop(),
             .define_global => {
                 const name = self.readString();
-                _ = try self.globals.set(name, self.peek(0));
+                try self.globals.put(name, self.peek(0));
                 _ = self.pop();
             },
             .get_global => {
@@ -154,12 +178,11 @@ fn run(self: *Self) !void {
             },
             .set_global => {
                 const name = self.readString();
-                if (try self.globals.set(name, self.peek(0))) {
-                    _ = self.globals.delete(name);
+                if (!self.globals.contains(name)) {
                     try self.runtimeErr("Undefined variable {s}.\n", .{name.bytes});
                     return VmError.UndefinedVariable;
                 }
-                _ = try self.globals.set(name, self.peek(0));
+                try self.globals.put(name, self.peek(0));
             },
             .get_local => {
                 const slot = self.readByte();
@@ -404,16 +427,18 @@ fn runtimeErr(self: *Self, comptime fmt: []const u8, args: anytype) !void {
         self.frame_count -= 1;
     }
 
+    self.resetStack();
     return VmError.RuntimeError;
 }
 
 fn defineNative(self: *Self, name: []const u8, func: NativeFn) !void {
     const str = try Obj.String.copy(self, name);
     self.push(Value{ .obj = &str.obj }); // push on the stack to avoid GCAllocator
-    const native = try Obj.Native.allocate(self, func, name);
-    const native_val = Value{ .obj = &native.obj };
-    self.push(native_val);
-    _ = try self.globals.set(str, native_val);
+
+    const native = try Obj.Native.allocate(self, func);
+    const func_value = Value{ .obj = &native.obj };
+    self.push(func_value);
+    try self.globals.put(str, func_value);
     _ = self.pop();
     _ = self.pop();
 }
@@ -443,10 +468,9 @@ fn clockNative(arg_count: u8) Value {
     return Value{ .number = seconds };
 }
 
-pub const VmError = error{
+const VmError = error{
     Ok,
     CompileError,
     UndefinedVariable,
     RuntimeError,
-    OutOfMemory,
 };

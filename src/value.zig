@@ -1,5 +1,6 @@
 const std = @import("std");
 const Obj = @import("object.zig");
+const VM = @import("vm.zig");
 
 pub const Tag = enum {
     bool,
@@ -43,14 +44,19 @@ pub const Value = union(Tag) {
         return self == .number;
     }
 
-    pub fn is(self: Value, t: Obj.ObjType) bool {
-        return switch (t) {
-            .string => return self.isObj() and self.asObj().is(.string),
-            .function => return self.isObj() and self.asObj().is(.function),
-            .native => return self.isObj() and self.asObj().is(.native),
-            .closure => return self.isObj() and self.asObj().is(.closure),
-            .upvalue => return self.isObj() and self.asObj().is(.upvalue),
-        };
+    pub inline fn is(self: Value, comptime t: @TypeOf(.enum_literal)) bool {
+        if (comptime @hasField(Obj.ObjType, @tagName(t))) {
+            return self == .obj and self.obj.obj_t == t;
+        } else {
+            return self == t;
+        }
+    }
+
+    pub fn mark(self: Value, vm: *VM) !void {
+        switch (self) {
+            .obj => |obj| try obj.mark(vm),
+            else => {},
+        }
     }
 
     pub fn eq(a: Value, b: Value) bool {
@@ -70,7 +76,9 @@ pub const Value = union(Tag) {
                 const name = if (obj.as(Obj.Function).name) |str| str.bytes else "script";
                 try writer.print("<fn {s}>", .{name});
             },
-            .native => try writer.print("<native fn", .{}),
+            .native => {
+                try writer.print("<native fn>", .{});
+            },
             .closure => {
                 const name = if (obj.as(Obj.Closure).func.name) |str| str.bytes else "script";
                 try writer.print("<fn {s}>", .{name});

@@ -7,21 +7,24 @@ const stdout = std.io.getStdOut().writer();
 const stdin = std.io.getStdIn().reader();
 
 pub fn main() !u8 {
-    var arena = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = arena.allocator();
-
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer _ = arena.deinit();
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
+    const arena_allocator = arena.allocator();
+
+    var gc = GCAllocator.init(arena_allocator);
+    const allocator = gc.allocator();
 
     var vm = try VM.init(allocator);
     defer vm.deinit();
 
-    switch (args.len) {
-        1 => try repl(&vm),
-        2 => try runFile(&vm, args[1], allocator),
+    var args = std.process.args();
+    const name = args.next() orelse "zlox";
+
+    switch (args.inner.count) {
+        1 => try repl(vm),
+        2 => try runFile(vm, args.next().?, arena_allocator),
         else => {
-            errout.print("Usage zloxc [path]\n", .{}) catch {};
+            errout.print("Usage: {s} zloxc [path]\n", .{name}) catch {};
             return std.process.exit(64);
         },
     }

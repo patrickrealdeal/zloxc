@@ -87,6 +87,7 @@ pub fn compile(source: []const u8, vm: *VM) !*Obj.Function {
     var parser = Parser.init(vm, &compiler);
     parser.scanner = &scanner;
     vm.parser = &parser;
+    defer vm.parser = null;
     try parser.advance();
 
     while (!try parser.match(.eof)) {
@@ -693,10 +694,12 @@ pub const Parser = struct {
     }
 
     fn makeConstant(self: *Parser, value: Value) !u8 {
+        self.vm.push(value);
         const constant = self.currentChunk().addConstant(value) catch {
             self.err("Err adding constant");
             return CompilerError.CompilerError;
         };
+        _ = self.vm.pop();
 
         if (constant > std.math.maxInt(u8)) {
             self.err("Too many constants in a chunk");
