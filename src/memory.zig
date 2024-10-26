@@ -112,7 +112,7 @@ pub const GCAllocator = struct {
         const vm = self.vm orelse return;
         while (vm.gray_stack.items.len > 0) {
             const object = vm.gray_stack.pop();
-            std.debug.print("GS: {} {any}\n", .{ object.obj_t, object.is_marked });
+            if (comptime debug.log_gc) std.debug.print("GS: {} {any}\n", .{ object.obj_t, object.is_marked });
             try object.blacken(vm);
         }
     }
@@ -122,6 +122,8 @@ pub const GCAllocator = struct {
         var previous: ?*Obj = null;
         var object = vm.objects;
         while (object) |o| {
+            // TODO: This is a workaround on a bug I still haven't figured out.
+            if (o.is(.native)) return;
             if (o.is_marked) {
                 o.is_marked = false;
                 previous = o;

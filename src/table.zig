@@ -55,7 +55,6 @@ pub fn Table(comptime KeyType: type, comptime ValueType: type) type {
             var it = self.hm.iterator();
             while (it.next()) |kv| {
                 if (!kv.key_ptr.*.isMarked()) {
-                    std.debug.print("ARE WE HERE?????\n", .{});
                     std.debug.print("!!!removed: {s}\n", .{kv.key_ptr.*.bytes});
                     _ = self.delete(kv.key_ptr.*);
                 }

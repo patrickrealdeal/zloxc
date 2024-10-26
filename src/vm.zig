@@ -46,17 +46,21 @@ const CallFrame = struct {
 };
 
 pub fn init(gc_allocator: std.mem.Allocator) !*Self {
+    const static = struct {
+        var frames: [frames_max]CallFrame = [1]CallFrame{CallFrame.init()} ** frames_max;
+    };
+
     const gc: *GCAllocator = @ptrCast(@alignCast(gc_allocator.ptr));
-    const vm = try gc.parent_allocator.create(Self);
+    var vm = try gc.parent_allocator.create(Self);
 
     vm.* = .{
-        .stack = try FixedCapacityStack(Value).init(gc_allocator, stack_max),
+        .stack = try FixedCapacityStack(Value).init(gc.parent_allocator, stack_max),
         .strings = Table(*Obj.String, Value).init(gc_allocator),
         .globals = Table(*Obj.String, Value).init(gc_allocator),
         .gray_stack = std.ArrayList(*Obj).init(gc_allocator),
         .ip = 0,
         .allocator = gc_allocator,
-        .frames = [_]CallFrame{CallFrame.init()} ** frames_max,
+        .frames = static.frames,
         .frame = undefined,
         .frame_count = 0,
         .objects = null,
