@@ -1,11 +1,21 @@
+fun fib(n) {
+  if (n < 2) return n;
+  return fib(n - 2) + fib(n - 1);
+}
+
 fun add(a, b) {
     return a + b;
 }
 
-fun mul(a, b) {
+fun mul(a,b) {
     return a * b;
 }
 
+fun elapsed(start) {
+    return clock() - start;
+}
 
-print add(1, 2);
-print mul(1, 2);
+var time = clock();
+print fib(30);
+print elapsed(time);
+

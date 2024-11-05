@@ -198,6 +198,10 @@ pub const Native = struct {
         return native;
     }
 
+    pub fn mark(_: *Obj.Native, _: *VM) !void {
+        // No internal references in Native, but acknowledge its existence
+    }
+
     pub fn destroy(self: *Native, vm: *VM) void {
         vm.allocator.destroy(self);
     }

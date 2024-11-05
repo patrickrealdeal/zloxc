@@ -20,7 +20,7 @@ pub const Compiler = struct {
     upvalues: std.ArrayList(Upvalue),
     local_count: u8,
     scope_depth: u32,
-    allocator: std.mem.Allocator,
+    allocator: *std.mem.Allocator,
 
     pub fn init(vm: *VM, func_t: FunctionType, enclosing: ?*Compiler) !Compiler {
         return .{
@@ -31,7 +31,7 @@ pub const Compiler = struct {
             .upvalues = std.ArrayList(Upvalue).init(vm.allocator),
             .local_count = 1, // claim slot zero for VM internal use
             .scope_depth = 0,
-            .allocator = vm.allocator,
+            .allocator = &vm.allocator,
         };
     }
 

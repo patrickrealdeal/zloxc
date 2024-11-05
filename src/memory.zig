@@ -53,6 +53,7 @@ pub const GCAllocator = struct {
                 self.collectGarbage() catch return false;
             }
         }
+
         if (self.parent_allocator.rawResize(buf, buf_align, new_len, ret_address)) {
             if (new_len <= buf.len) {
                 self.bytes_allocated -= buf.len - new_len;
@@ -123,7 +124,7 @@ pub const GCAllocator = struct {
         var object = vm.objects;
         while (object) |o| {
             // TODO: This is a workaround on a bug I still haven't figured out.
-            if (o.is(.native)) return;
+            if (o.is(.native)) break;
             if (o.is_marked) {
                 o.is_marked = false;
                 previous = o;

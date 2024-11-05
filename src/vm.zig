@@ -45,6 +45,11 @@ const CallFrame = struct {
     }
 };
 
+inline fn resetStack(self: *Self) void {
+    self.open_upvalues = null;
+    self.frame_count = 0;
+}
+
 pub fn init(gc_allocator: std.mem.Allocator) !*Self {
     const static = struct {
         var frames: [frames_max]CallFrame = [1]CallFrame{CallFrame.init()} ** frames_max;
@@ -69,7 +74,6 @@ pub fn init(gc_allocator: std.mem.Allocator) !*Self {
     };
 
     try vm.defineNative("clock", clockNative);
-    gc.vm = vm;
 
     return vm;
 }
