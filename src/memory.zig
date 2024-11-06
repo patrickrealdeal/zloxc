@@ -124,7 +124,7 @@ pub const GCAllocator = struct {
         var object = vm.objects;
         while (object) |o| {
             // TODO: This is a workaround on a bug I still haven't figured out.
-            if (o.is(.native)) break;
+            if (o.is(.native)) return;
             if (o.is_marked) {
                 o.is_marked = false;
                 previous = o;

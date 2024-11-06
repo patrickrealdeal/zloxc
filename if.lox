@@ -1,5 +1,0 @@
-if (2 == 3) {
-    print "true so no jump";
-} else {
-    print "jump because false here";
-}

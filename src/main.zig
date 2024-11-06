@@ -17,6 +17,8 @@ pub fn main() !u8 {
     var vm = try VM.init(allocator);
     defer vm.deinit();
 
+    gc.vm = vm;
+
     var args = std.process.args();
     const name = args.next() orelse "zlox";
 
