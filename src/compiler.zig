@@ -81,11 +81,11 @@ const FunctionType = enum {
     script,
 };
 
-pub fn compile(source: []const u8, vm: *VM) !*Obj.Function {
-    var compiler = try Compiler.init(vm, .script, null);
-    var scanner = Scanner.init(source);
-    var parser = Parser.init(vm, &compiler);
-    parser.scanner = &scanner;
+pub fn compile(source: []const u8, vm: *VM) !?*Obj.Function {
+    const scanner: Scanner = .init(source);
+    var compiler: Compiler = try .init(vm, .script, null);
+    defer compiler.deinit();
+    var parser: Parser = .init(scanner, vm, &compiler);
     vm.parser = &parser;
     defer vm.parser = null;
     try parser.advance();
@@ -130,62 +130,62 @@ const ParseRule = struct {
 
 inline fn getRule(ttype: TokenType) ParseRule {
     return switch (ttype) {
-        .left_paren => ParseRule.init(Parser.grouping, Parser.call, .prec_call),
-        .right_paren => ParseRule.init(null, null, .prec_none),
-        .left_brace => ParseRule.init(null, null, .prec_none),
-        .right_brace => ParseRule.init(null, null, .prec_none),
-        .comma => ParseRule.init(null, null, .prec_none),
-        .dot => ParseRule.init(null, null, .prec_none),
-        .minus => ParseRule.init(Parser.unary, Parser.binary, .prec_term),
-        .plus => ParseRule.init(null, Parser.binary, .prec_term),
-        .semicolon => ParseRule.init(null, null, .prec_none),
-        .slash => ParseRule.init(null, Parser.binary, .prec_factor),
-        .star => ParseRule.init(null, Parser.binary, .prec_factor),
-        .bang => ParseRule.init(Parser.unary, null, .prec_none),
-        .bang_equal => ParseRule.init(null, Parser.binary, .prec_equality),
-        .equal => ParseRule.init(null, null, .prec_none),
-        .equal_equal => ParseRule.init(null, Parser.binary, .prec_equality),
-        .greater => ParseRule.init(null, Parser.binary, .prec_comparison),
-        .greater_equal => ParseRule.init(null, Parser.binary, .prec_comparison),
-        .less => ParseRule.init(null, Parser.binary, .prec_comparison),
-        .less_equal => ParseRule.init(null, Parser.binary, .prec_comparison),
-        .identifier => ParseRule.init(Parser.variable, null, .prec_none),
-        .string => ParseRule.init(Parser.string, null, .prec_none),
-        .number => ParseRule.init(Parser.number, null, .prec_none),
-        .keyword_class => ParseRule.init(null, null, .prec_none),
-        .keyword_else => ParseRule.init(null, null, .prec_none),
-        .keyword_false => ParseRule.init(Parser.literal, null, .prec_none),
-        .keyword_true => ParseRule.init(Parser.literal, null, .prec_none),
-        .keyword_for => ParseRule.init(null, null, .prec_none),
-        .keyword_fun => ParseRule.init(null, null, .prec_none),
-        .keyword_if => ParseRule.init(null, null, .prec_none),
-        .keyword_nil => ParseRule.init(Parser.literal, null, .prec_none),
-        .keyword_and => ParseRule.init(null, Parser.and_, .prec_and),
-        .keyword_or => ParseRule.init(null, Parser.or_, .prec_or),
-        .keyword_print => ParseRule.init(null, null, .prec_none),
-        .keyword_return => ParseRule.init(null, null, .prec_none),
-        .keyword_super => ParseRule.init(null, null, .prec_none),
-        .keyword_this => ParseRule.init(null, null, .prec_none),
-        .keyword_var => ParseRule.init(null, null, .prec_none),
-        .keyword_while => ParseRule.init(null, null, .prec_none),
-        .err => ParseRule.init(null, null, .prec_none),
-        .eof => ParseRule.init(null, null, .prec_none),
+        .left_paren => .init(Parser.grouping, Parser.call, .prec_call),
+        .right_paren => .init(null, null, .prec_none),
+        .left_brace => .init(null, null, .prec_none),
+        .right_brace => .init(null, null, .prec_none),
+        .comma => .init(null, null, .prec_none),
+        .dot => .init(null, null, .prec_none),
+        .minus => .init(Parser.unary, Parser.binary, .prec_term),
+        .plus => .init(null, Parser.binary, .prec_term),
+        .semicolon => .init(null, null, .prec_none),
+        .slash => .init(null, Parser.binary, .prec_factor),
+        .star => .init(null, Parser.binary, .prec_factor),
+        .bang => .init(Parser.unary, null, .prec_none),
+        .bang_equal => .init(null, Parser.binary, .prec_equality),
+        .equal => .init(null, null, .prec_none),
+        .equal_equal => .init(null, Parser.binary, .prec_equality),
+        .greater => .init(null, Parser.binary, .prec_comparison),
+        .greater_equal => .init(null, Parser.binary, .prec_comparison),
+        .less => .init(null, Parser.binary, .prec_comparison),
+        .less_equal => .init(null, Parser.binary, .prec_comparison),
+        .identifier => .init(Parser.variable, null, .prec_none),
+        .string => .init(Parser.string, null, .prec_none),
+        .number => .init(Parser.number, null, .prec_none),
+        .keyword_class => .init(null, null, .prec_none),
+        .keyword_else => .init(null, null, .prec_none),
+        .keyword_false => .init(Parser.literal, null, .prec_none),
+        .keyword_true => .init(Parser.literal, null, .prec_none),
+        .keyword_for => .init(null, null, .prec_none),
+        .keyword_fun => .init(null, null, .prec_none),
+        .keyword_if => .init(null, null, .prec_none),
+        .keyword_nil => .init(Parser.literal, null, .prec_none),
+        .keyword_and => .init(null, Parser.and_, .prec_and),
+        .keyword_or => .init(null, Parser.or_, .prec_or),
+        .keyword_print => .init(null, null, .prec_none),
+        .keyword_return => .init(null, null, .prec_none),
+        .keyword_super => .init(null, null, .prec_none),
+        .keyword_this => .init(null, null, .prec_none),
+        .keyword_var => .init(null, null, .prec_none),
+        .keyword_while => .init(null, null, .prec_none),
+        .err => .init(null, null, .prec_none),
+        .eof => .init(null, null, .prec_none),
     };
 }
 
 pub const Parser = struct {
     current: Token,
     previous: Token,
-    scanner: *Scanner,
+    scanner: Scanner,
     panic_mode: bool,
     vm: *VM,
     compiler: *Compiler,
 
-    pub fn init(vm: *VM, compiler: *Compiler) Parser {
+    pub fn init(scanner: Scanner, vm: *VM, compiler: *Compiler) Parser {
         return .{
             .current = undefined,
             .previous = undefined,
-            .scanner = undefined,
+            .scanner = scanner,
             .panic_mode = false,
             .vm = vm,
             .compiler = compiler,

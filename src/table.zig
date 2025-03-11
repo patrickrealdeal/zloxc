@@ -54,7 +54,7 @@ pub fn Table(comptime KeyType: type, comptime ValueType: type) type {
         pub fn removeWhite(self: *@This()) void {
             var it = self.hm.iterator();
             while (it.next()) |kv| {
-                if (!kv.key_ptr.*.isMarked()) {
+                if (!kv.key_ptr.*.obj.is_marked) {
                     std.debug.print("!!!removed: {s}\n", .{kv.key_ptr.*.bytes});
                     _ = self.delete(kv.key_ptr.*);
                 }

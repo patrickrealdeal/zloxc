@@ -31,11 +31,12 @@ pub const GCAllocator = struct {
                 .alloc = alloc,
                 .resize = resize,
                 .free = free,
+                .remap = remap,
             },
         };
     }
 
-    fn alloc(ctx: *anyopaque, len: usize, ptr_align: u8, ret_address: usize) ?[*]u8 {
+    fn alloc(ctx: *anyopaque, len: usize, ptr_align: std.mem.Alignment, ret_address: usize) ?[*]u8 {
         const self: *GCAllocator = @ptrCast(@alignCast(ctx));
         if ((self.bytes_allocated + len > self.next_gc) or debug.stress_gc) {
             self.collectGarbage() catch return null;
@@ -46,7 +47,7 @@ pub const GCAllocator = struct {
         return result;
     }
 
-    fn resize(ctx: *anyopaque, buf: []u8, buf_align: u8, new_len: usize, ret_address: usize) bool {
+    fn resize(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, new_len: usize, ret_address: usize) bool {
         const self: *GCAllocator = @ptrCast(@alignCast(ctx));
         if (new_len > buf.len) {
             if ((self.bytes_allocated + (new_len - buf.len) > self.next_gc) or debug.stress_gc) {
@@ -55,10 +56,10 @@ pub const GCAllocator = struct {
         }
 
         if (self.parent_allocator.rawResize(buf, buf_align, new_len, ret_address)) {
-            if (new_len <= buf.len) {
-                self.bytes_allocated -= buf.len - new_len;
-            } else {
+            if (new_len > buf.len) {
                 self.bytes_allocated += new_len - buf.len;
+            } else {
+                self.bytes_allocated -= buf.len - new_len;
             }
 
             return true;
@@ -67,7 +68,16 @@ pub const GCAllocator = struct {
         return false;
     }
 
-    fn free(ctx: *anyopaque, buf: []u8, buf_align: u8, ret_address: usize) void {
+    fn remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
+        _ = ctx;
+        _ = memory;
+        _ = new_len;
+        _ = alignment;
+        _ = ret_addr;
+        return null;
+    }
+
+    fn free(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, ret_address: usize) void {
         const self: *GCAllocator = @ptrCast(@alignCast(ctx));
         self.parent_allocator.rawFree(buf, buf_align, ret_address);
         self.bytes_allocated -= buf.len;
@@ -114,7 +124,7 @@ pub const GCAllocator = struct {
         while (vm.gray_stack.items.len > 0) {
             const object = vm.gray_stack.pop();
             if (comptime debug.log_gc) std.debug.print("GS: {} {any}\n", .{ object.obj_t, object.is_marked });
-            try object.blacken(vm);
+            try object.?.blacken(vm);
         }
     }
 
@@ -152,7 +162,7 @@ pub const GCAllocator = struct {
         vm.strings.removeWhite();
         self.sweep();
 
-        self.next_gc = self.bytes_allocated * GC_HEAP_GROW_FACTOR;
+        self.next_gc = self.bytes_allocated *| GC_HEAP_GROW_FACTOR;
 
         //if (comptime debug.log_gc) std.debug.print(
         //     "-- gc end\ncollected {d} bytes (from {d} to {d}) next at {d}\n",

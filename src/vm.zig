@@ -14,7 +14,7 @@ const debug = @import("debug.zig");
 const u8_max = std.math.maxInt(u8) + 1;
 
 const stack_max = frames_max * u8_max;
-const frames_max = 64;
+const frames_max = 128;
 
 const Self = @This();
 
@@ -51,6 +51,7 @@ inline fn resetStack(self: *Self) void {
 }
 
 pub fn init(gc_allocator: std.mem.Allocator) !*Self {
+    std.debug.print("STACK MAX: {d}\n", .{stack_max});
     const static = struct {
         var frames: [frames_max]CallFrame = [1]CallFrame{CallFrame.init()} ** frames_max;
     };
@@ -59,10 +60,10 @@ pub fn init(gc_allocator: std.mem.Allocator) !*Self {
     var vm = try gc.parent_allocator.create(Self);
 
     vm.* = .{
-        .stack = try FixedCapacityStack(Value).init(gc.parent_allocator, stack_max),
-        .strings = Table(*Obj.String, Value).init(gc_allocator),
-        .globals = Table(*Obj.String, Value).init(gc_allocator),
-        .gray_stack = std.ArrayList(*Obj).init(gc_allocator),
+        .stack = try .init(gc.parent_allocator, stack_max),
+        .strings = .init(gc_allocator),
+        .globals = .init(gc_allocator),
+        .gray_stack = .init(gc_allocator),
         .ip = 0,
         .allocator = gc_allocator,
         .frames = static.frames,
@@ -89,19 +90,22 @@ pub fn deinit(self: *Self) void {
 }
 
 pub fn interpret(self: *Self, source: []const u8) !void {
-    //std.debug.assert(self.stack.items.len == 0);
-    // defer std.debug.assert(self.stack.items.len == 0);
+    std.debug.assert(self.stack.items.len == 0);
+    defer std.debug.assert(self.stack.items.len == 0);
 
-    const func = try compiler.compile(source, self);
-    self.push(Value{ .obj = &func.obj });
+    if (try compiler.compile(source, self)) |func| {
+        self.push(Value{ .obj = &func.obj });
 
-    const closure = try Obj.Closure.allocate(self, func);
-    _ = self.pop();
-    self.push(Value{ .obj = &closure.obj });
+        const closure = try Obj.Closure.allocate(self, func);
+        _ = self.pop();
+        self.push(Value{ .obj = &closure.obj });
 
-    try self.call(closure, 0);
+        try self.call(closure, 0);
 
-    try self.run();
+        try self.run();
+        return;
+    }
+    return VmError.CompileError;
 }
 
 fn run(self: *Self) !void {
@@ -417,11 +421,11 @@ fn runtimeErr(self: *Self, comptime fmt: []const u8, args: anytype) !void {
 
 fn defineNative(self: *Self, name: []const u8, func: NativeFn) !void {
     const str = try Obj.String.copy(self, name);
-    self.push(Value{ .obj = &str.obj }); // push on the stack to avoid GCAllocator
     const native = try Obj.Native.allocate(self, func, name);
     const native_val = Value{ .obj = &native.obj };
+    self.push(Value{ .obj = &str.obj }); // push on the stack to avoid GCAllocator
     self.push(native_val);
-    _ = try self.globals.set(str, native_val);
+    _ = try self.globals.set(str, self.peek(0));
     _ = self.pop();
     _ = self.pop();
 }
