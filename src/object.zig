@@ -45,6 +45,7 @@ pub fn is(self: *Obj, obj_t: ObjType) bool {
 pub fn mark(self: *Obj, vm: *VM) !void {
     if (self.is_marked) return;
     if (comptime debug.log_gc) std.debug.print("{*} mark {}\n", .{ self, Value{ .obj = self } });
+    if (self.obj_t == .native) return;
     self.is_marked = true;
     try vm.gray_stack.append(self);
 }

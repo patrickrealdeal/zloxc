@@ -42,7 +42,7 @@ pub const GCAllocator = struct {
             self.collectGarbage() catch return null;
         }
 
-        const result = self.parent_allocator.rawAlloc(len, ptr_align, ret_address);
+        const result = self.parent_allocator.vtable.alloc(self.parent_allocator.ptr, len, ptr_align, ret_address);
         if (result != null) self.bytes_allocated += len;
         return result;
     }
@@ -116,6 +116,14 @@ pub const GCAllocator = struct {
             upvalue = u.next;
         }
 
+        var object = vm.objects;
+        while (object) |o| {
+            if (o.is(.native)) {
+                o.is_marked = true;
+            }
+            object = o.next;
+        }
+
         try self.markCompilerRoots();
     }
 
@@ -123,7 +131,12 @@ pub const GCAllocator = struct {
         const vm = self.vm orelse return;
         while (vm.gray_stack.items.len > 0) {
             const object = vm.gray_stack.pop();
-            if (comptime debug.log_gc) std.debug.print("GS: {} {any}\n", .{ object.obj_t, object.is_marked });
+            if (object.?.obj_t == .native) {
+                std.debug.print("Warning: .native object {?} found on gray stack. This should not happen.\n", .{object});
+                continue;
+            }
+
+            if (comptime debug.log_gc) std.debug.print("GS: {} {any}\n", .{ object.?.obj_t, object.?.is_marked });
             try object.?.blacken(vm);
         }
     }
@@ -134,7 +147,11 @@ pub const GCAllocator = struct {
         var object = vm.objects;
         while (object) |o| {
             // TODO: This is a workaround on a bug I still haven't figured out.
-            if (o.is(.native)) return;
+            //if (o.is(.native)) {
+            //    previous = o;
+            //    object = o.next;
+            //    return;
+            //}
             if (o.is_marked) {
                 o.is_marked = false;
                 previous = o;

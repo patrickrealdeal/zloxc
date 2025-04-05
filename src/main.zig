@@ -54,20 +54,22 @@ fn repl(vm: *VM) !void {
 }
 
 fn runFile(vm: *VM, filename: []const u8, allocator: std.mem.Allocator) !void {
-    const source = readFile(filename, allocator);
+    const source = try readFile(filename, allocator);
     defer allocator.free(source);
 
     try vm.interpret(source);
 }
 
-fn readFile(path: []const u8, allocator: std.mem.Allocator) []const u8 {
+fn readFile(path: []const u8, allocator: std.mem.Allocator) ![]const u8 {
     const file = std.fs.cwd().openFile(path, .{}) catch |err| {
         errout.print("Could not open file \"{s}\". error {any}\n", .{ path, err }) catch {};
         std.process.exit(74);
     };
     defer file.close();
 
-    return file.readToEndAlloc(allocator, 100000) catch |err| {
+    const file_stat: std.fs.File.Stat = try file.stat();
+
+    return file.readToEndAlloc(allocator, @intCast(file_stat.size)) catch |err| {
         errout.print("Could not read file \"{s}\", error: {any}\n", .{ path, err }) catch {};
         std.process.exit(74);
     };

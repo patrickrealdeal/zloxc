@@ -75,7 +75,6 @@ pub fn init(gc_allocator: std.mem.Allocator) !*Self {
     };
 
     try vm.defineNative("clock", clockNative);
-
     return vm;
 }
 
@@ -159,6 +158,7 @@ fn run(self: *Self) !void {
             .get_global => {
                 const name = self.readString();
                 const value = self.globals.get(name) orelse {
+                    _ = self.pop();
                     try self.runtimeErr("Undefined variable {s}.\n", .{name.bytes});
                     return VmError.UndefinedVariable;
                 };
@@ -423,6 +423,7 @@ fn defineNative(self: *Self, name: []const u8, func: NativeFn) !void {
     const str = try Obj.String.copy(self, name);
     const native = try Obj.Native.allocate(self, func, name);
     const native_val = Value{ .obj = &native.obj };
+    try str.obj.mark(self);
     self.push(Value{ .obj = &str.obj }); // push on the stack to avoid GCAllocator
     self.push(native_val);
     _ = try self.globals.set(str, self.peek(0));

@@ -82,10 +82,10 @@ const FunctionType = enum {
 };
 
 pub fn compile(source: []const u8, vm: *VM) !?*Obj.Function {
-    const scanner: Scanner = .init(source);
+    var scanner: Scanner = .init(source);
     var compiler: Compiler = try .init(vm, .script, null);
     defer compiler.deinit();
-    var parser: Parser = .init(scanner, vm, &compiler);
+    var parser: Parser = .init(&scanner, vm, &compiler);
     vm.parser = &parser;
     defer vm.parser = null;
     try parser.advance();
@@ -176,12 +176,12 @@ inline fn getRule(ttype: TokenType) ParseRule {
 pub const Parser = struct {
     current: Token,
     previous: Token,
-    scanner: Scanner,
+    scanner: *Scanner,
     panic_mode: bool,
     vm: *VM,
     compiler: *Compiler,
 
-    pub fn init(scanner: Scanner, vm: *VM, compiler: *Compiler) Parser {
+    pub fn init(scanner: *Scanner, vm: *VM, compiler: *Compiler) Parser {
         return .{
             .current = undefined,
             .previous = undefined,
