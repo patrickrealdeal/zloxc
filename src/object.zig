@@ -6,12 +6,14 @@ const hashFn = std.hash.Fnv1a_32.hash;
 const debug = @import("debug.zig");
 
 const Obj = @This();
+
 pub const ObjType = enum {
     string,
     function,
     native,
     closure,
     upvalue,
+    class,
 };
 
 obj_t: ObjType,
@@ -45,7 +47,6 @@ pub fn is(self: *Obj, obj_t: ObjType) bool {
 pub fn mark(self: *Obj, vm: *VM) !void {
     if (self.is_marked) return;
     if (comptime debug.log_gc) std.debug.print("{*} mark {}\n", .{ self, Value{ .obj = self } });
-    if (self.obj_t == .native) return;
     self.is_marked = true;
     try vm.gray_stack.append(self);
 }
@@ -69,8 +70,12 @@ pub fn blacken(self: *Obj, vm: *VM) !void {
                     try upvalue.obj.mark(vm);
             }
         },
+        .class => {
+            const class = self.as(Class);
+            try class.name.obj.mark(vm); 
+        },
     }
-    if (comptime debug.log_gc) std.debug.print("{*} blacken {}\n", .{ self, Value{ .obj = self } });
+    //if (comptime debug.log_gc) std.debug.print("{*} blacken {}\n", .{ self, Value{ .obj = self } });
 }
 
 pub fn destroy(obj: *Obj, vm: *VM) void {
@@ -95,6 +100,10 @@ pub fn destroy(obj: *Obj, vm: *VM) void {
             const self: *Upvalue = @fieldParentPtr("obj", obj);
             self.destroy(vm);
         },
+        .class => {
+            const self: *Class = @fieldParentPtr("obj", obj);
+            self.destroy(vm);
+        },
     }
 }
 
@@ -102,6 +111,7 @@ pub const String = struct {
     obj: Obj,
     bytes: []const u8,
     hash: u32,
+    owns_bytes: bool = false,
 
     pub fn allocate(vm: *VM, bytes: []const u8, hash: u32) !*String {
         const str = try Obj.create(vm, String, .string);
@@ -121,7 +131,9 @@ pub const String = struct {
 
         const buffer = try vm.allocator.alloc(u8, bytes.len);
         std.mem.copyForwards(u8, buffer, bytes);
-        return allocate(vm, buffer, hash);
+        const str = try allocate(vm, buffer, hash);
+        str.owns_bytes = true;
+        return str;
     }
 
     pub fn take(vm: *VM, bytes: []const u8) !*String {
@@ -131,7 +143,9 @@ pub const String = struct {
             return s;
         }
 
-        return try allocate(vm, bytes, hash);
+        const str = try allocate(vm, bytes, hash);
+        str.owns_bytes = false;
+        return str;
     }
 
     pub fn mark(self: *String, vm: *VM) !void {
@@ -152,8 +166,10 @@ pub const String = struct {
     }
 
     pub fn destroy(self: *String, vm: *VM) void {
-        vm.allocator.free(self.bytes);
-        vm.allocator.destroy(self);
+        if (self.owns_bytes) {
+            vm.allocator.free(self.bytes);
+            vm.allocator.destroy(self);
+        }
     }
 };
 
@@ -244,6 +260,26 @@ pub const Upvalue = struct {
     }
 
     pub fn destroy(self: *Upvalue, vm: *VM) void {
+        vm.allocator.destroy(self);
+    }
+};
+
+pub const Class = struct {
+    obj: Obj,
+    name: *String,
+
+    pub fn allocate(vm: *VM, name: *String) !*Class {
+        const class = try Obj.create(vm, Class, .class);
+
+        class.name = name;
+        return class;
+    }
+
+    pub fn mark(self: *String, vm: *VM) !void {
+        try self.obj.mark(vm);
+    }
+
+    fn destroy(self: *Class, vm: *VM) void {
         vm.allocator.destroy(self);
     }
 };

@@ -152,22 +152,22 @@ inline fn getRule(ttype: TokenType) ParseRule {
         .identifier => .init(Parser.variable, null, .prec_none),
         .string => .init(Parser.string, null, .prec_none),
         .number => .init(Parser.number, null, .prec_none),
-        .keyword_class => .init(null, null, .prec_none),
-        .keyword_else => .init(null, null, .prec_none),
-        .keyword_false => .init(Parser.literal, null, .prec_none),
-        .keyword_true => .init(Parser.literal, null, .prec_none),
-        .keyword_for => .init(null, null, .prec_none),
-        .keyword_fun => .init(null, null, .prec_none),
-        .keyword_if => .init(null, null, .prec_none),
-        .keyword_nil => .init(Parser.literal, null, .prec_none),
-        .keyword_and => .init(null, Parser.and_, .prec_and),
-        .keyword_or => .init(null, Parser.or_, .prec_or),
-        .keyword_print => .init(null, null, .prec_none),
-        .keyword_return => .init(null, null, .prec_none),
-        .keyword_super => .init(null, null, .prec_none),
-        .keyword_this => .init(null, null, .prec_none),
-        .keyword_var => .init(null, null, .prec_none),
-        .keyword_while => .init(null, null, .prec_none),
+        .class => .init(null, null, .prec_none),
+        .@"else" => .init(null, null, .prec_none),
+        .false => .init(Parser.literal, null, .prec_none),
+        .true => .init(Parser.literal, null, .prec_none),
+        .@"for" => .init(null, null, .prec_none),
+        .fun => .init(null, null, .prec_none),
+        .@"if" => .init(null, null, .prec_none),
+        .nil => .init(Parser.literal, null, .prec_none),
+        .@"and" => .init(null, Parser.and_, .prec_and),
+        .@"or" => .init(null, Parser.or_, .prec_or),
+        .print => .init(null, null, .prec_none),
+        .@"return" => .init(null, null, .prec_none),
+        .super => .init(null, null, .prec_none),
+        .this => .init(null, null, .prec_none),
+        .@"var" => .init(null, null, .prec_none),
+        .@"while" => .init(null, null, .prec_none),
         .err => .init(null, null, .prec_none),
         .eof => .init(null, null, .prec_none),
     };
@@ -395,9 +395,9 @@ pub const Parser = struct {
     }
 
     fn declaration(self: *Parser) anyerror!void {
-        if (try self.match(.keyword_var)) {
+        if (try self.match(.@"var")) {
             try self.varDeclaration();
-        } else if (try self.match(.keyword_fun)) {
+        } else if (try self.match(.fun)) {
             try self.funDeclaration();
         } else {
             try self.statement();
@@ -407,15 +407,15 @@ pub const Parser = struct {
     }
 
     fn statement(self: *Parser) !void {
-        if (try self.match(.keyword_print)) {
+        if (try self.match(.print)) {
             try self.printStatement();
-        } else if (try self.match(.keyword_if)) {
+        } else if (try self.match(.@"if")) {
             try self.ifStatement();
-        } else if (try self.match(.keyword_return)) {
+        } else if (try self.match(.@"return")) {
             try self.retStatement();
-        } else if (try self.match(.keyword_while)) {
+        } else if (try self.match(.@"while")) {
             try self.whileStatement();
-        } else if (try self.match(.keyword_for)) {
+        } else if (try self.match(.@"for")) {
             try self.forStatement();
         } else if (try self.match(.left_brace)) {
             self.beginScope();
@@ -445,7 +445,7 @@ pub const Parser = struct {
         self.patchJump(then_jump);
         self.emitByte(@intFromEnum(OpCode.pop));
 
-        if (try self.match(.keyword_else)) {
+        if (try self.match(.@"else")) {
             try self.statement();
         }
 
@@ -473,7 +473,7 @@ pub const Parser = struct {
         try self.consume(.left_paren, "Expected '(' after 'for'.");
         if (try self.match(.semicolon)) {
             // no initializer
-        } else if (try self.match(.keyword_var)) {
+        } else if (try self.match(.@"var")) {
             try self.varDeclaration();
         } else {
             try self.expressionStatement();
@@ -542,7 +542,15 @@ pub const Parser = struct {
         while (!try self.match(.eof)) {
             if (self.previous.ttype == .semicolon) return;
             switch (self.current.ttype) {
-                .keyword_class, .keyword_fun, .keyword_var, .keyword_for, .keyword_if, .keyword_while, .keyword_print, .keyword_return => return,
+                .class,
+                .fun,
+                .@"var",
+                .@"for",
+                .@"if",
+                .@"while",
+                .print,
+                .@"return",
+                => return,
                 else => try self.advance(),
             }
         }
@@ -581,9 +589,9 @@ pub const Parser = struct {
     fn literal(self: *Parser, can_assign: bool) !void {
         _ = can_assign;
         switch (self.previous.ttype) {
-            .keyword_false => self.emitByte(@intFromEnum(OpCode.false)),
-            .keyword_true => self.emitByte(@intFromEnum(OpCode.true)),
-            .keyword_nil => self.emitByte(@intFromEnum(OpCode.nil)),
+            .false => self.emitByte(@intFromEnum(OpCode.false)),
+            .true => self.emitByte(@intFromEnum(OpCode.true)),
+            .nil => self.emitByte(@intFromEnum(OpCode.nil)),
             else => unreachable,
         }
     }
@@ -652,7 +660,7 @@ pub const Parser = struct {
         _ = can_assign;
         const optype = self.previous.ttype;
 
-        // compile opperand
+        // compile operand
         try self.parsePrecedence(.prec_unary);
 
         switch (optype) {

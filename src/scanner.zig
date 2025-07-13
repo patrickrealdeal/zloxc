@@ -64,22 +64,22 @@ fn match(self: *Self, char: u8) bool {
         return false;
     }
 
-    self.current += 1;
+    _ = self.advance();
     return true;
 }
 
 fn skipWhitespace(self: *Self) void {
     while (true) {
         switch (self.peek()) {
-            ' ', '\t', '\r' => self.current += 1,
+            ' ', '\t', '\r' => _ = self.advance(),
             '\n' => {
                 self.line += 1;
-                self.current += 1;
+                _ = self.advance();
             },
             '/' => {
                 if (self.peekNext() == '/') {
-                    while (self.peek() == '\n' and !self.isAtEnd()) {
-                        self.current += 1;
+                    while (self.peek() != '\n' and !self.isAtEnd()) {
+                        _ = self.advance();
                     }
                 } else {
                     return;
@@ -95,28 +95,28 @@ fn string(self: *Self) Token {
         if (self.peek() == '\n') {
             self.line += 1;
         }
-        self.current += 1;
+        _ = self.advance();
     }
 
     if (self.isAtEnd()) return self.errorToken("Unterminated string");
 
     // The closing quote
-    self.current += 1;
+    _ = self.advance();
     return self.makeToken(.string);
 }
 
 fn number(self: *Self) Token {
     while (std.ascii.isDigit(self.peek())) {
-        self.current += 1;
+        _ = self.advance();
     }
 
     // Look for a fractional part
     if (self.peek() == '.' and std.ascii.isDigit(self.peekNext())) {
         // Consume the '.'
-        self.current += 1;
+        _ = self.advance();
 
         while (std.ascii.isDigit(self.peek())) {
-            self.current += 1;
+            _ = self.advance();
         }
     }
 
@@ -124,32 +124,32 @@ fn number(self: *Self) Token {
 }
 
 fn identifier(self: *Self) Token {
-    while (std.ascii.isAlphabetic(self.peek()) or std.ascii.isDigit(self.peek())) self.current += 1;
+    while (std.ascii.isAlphabetic(self.peek()) or std.ascii.isDigit(self.peek())) _ = self.advance();
     return self.makeToken(self.identifierType());
 }
 
 fn identifierType(self: *Self) TokenType {
     return switch (self.source[self.start]) {
-        'a' => self.checkKeyword("and", .keyword_and),
-        'c' => self.checkKeyword("class", .keyword_class),
-        'e' => self.checkKeyword("else", .keyword_else),
-        'i' => self.checkKeyword("if", .keyword_if),
-        'n' => self.checkKeyword("nil", .keyword_nil),
-        'o' => self.checkKeyword("or", .keyword_or),
-        'p' => self.checkKeyword("print", .keyword_print),
-        'r' => self.checkKeyword("return", .keyword_return),
-        's' => self.checkKeyword("super", .keyword_super),
-        'v' => self.checkKeyword("var", .keyword_var),
-        'w' => self.checkKeyword("while", .keyword_while),
+        'a' => self.checkKeyword("and", .@"and"),
+        'c' => self.checkKeyword("class", .class),
+        'e' => self.checkKeyword("else", .@"else"),
+        'i' => self.checkKeyword("if", .@"if"),
+        'n' => self.checkKeyword("nil", .nil),
+        'o' => self.checkKeyword("or", .@"or"),
+        'p' => self.checkKeyword("print", .print),
+        'r' => self.checkKeyword("return", .@"return"),
+        's' => self.checkKeyword("super", .super),
+        'v' => self.checkKeyword("var", .@"var"),
+        'w' => self.checkKeyword("while", .@"while"),
         'f' => switch (self.source[self.start + 1]) {
-            'a' => self.checkKeyword("false", .keyword_false),
-            'o' => self.checkKeyword("for", .keyword_for),
-            'u' => self.checkKeyword("fun", .keyword_fun),
+            'a' => self.checkKeyword("false", .false),
+            'o' => self.checkKeyword("for", .@"for"),
+            'u' => self.checkKeyword("fun", .fun),
             else => .identifier,
         },
         't' => switch (self.source[self.start + 1]) {
-            'r' => self.checkKeyword("true", .keyword_true),
-            'h' => self.checkKeyword("this", .keyword_this),
+            'r' => self.checkKeyword("true", .true),
+            'h' => self.checkKeyword("this", .this),
             else => .identifier,
         },
         else => .identifier,

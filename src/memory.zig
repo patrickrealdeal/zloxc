@@ -20,7 +20,7 @@ pub const GCAllocator = struct {
             .vm = null,
             .parent_allocator = parent_allocator,
             .bytes_allocated = 0,
-            .next_gc = 1024 * 1024,
+            .next_gc = 4,
         };
     }
 
@@ -42,7 +42,7 @@ pub const GCAllocator = struct {
             self.collectGarbage() catch return null;
         }
 
-        const result = self.parent_allocator.vtable.alloc(self.parent_allocator.ptr, len, ptr_align, ret_address);
+        const result = self.parent_allocator.rawAlloc(len, ptr_align, ret_address);
         if (result != null) self.bytes_allocated += len;
         return result;
     }
@@ -62,10 +62,9 @@ pub const GCAllocator = struct {
                 self.bytes_allocated -= buf.len - new_len;
             }
 
-            return true;
         }
         std.debug.assert(new_len > buf.len);
-        return false;
+        return self.parent_allocator.rawResize(buf, buf_align, new_len, ret_address);
     }
 
     fn remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
@@ -97,6 +96,7 @@ pub const GCAllocator = struct {
     }
 
     fn markRoots(self: *GCAllocator) !void {
+        //std.debug.print("Called MARKROOTS\n", .{});
         const vm = self.vm orelse return;
 
         for (vm.stack.items) |item| {
@@ -116,27 +116,17 @@ pub const GCAllocator = struct {
             upvalue = u.next;
         }
 
-        var object = vm.objects;
-        while (object) |o| {
-            if (o.is(.native)) {
-                o.is_marked = true;
-            }
-            object = o.next;
-        }
-
+        //try vm.strings.mark(vm);
         try self.markCompilerRoots();
     }
 
     fn traceReferences(self: *GCAllocator) !void {
         const vm = self.vm orelse return;
+
         while (vm.gray_stack.items.len > 0) {
             const object = vm.gray_stack.pop();
-            if (object.?.obj_t == .native) {
-                std.debug.print("Warning: .native object {?} found on gray stack. This should not happen.\n", .{object});
-                continue;
-            }
 
-            if (comptime debug.log_gc) std.debug.print("GS: {} {any}\n", .{ object.?.obj_t, object.?.is_marked });
+            if (comptime debug.stress_gc) std.debug.print("GS: {} {any}\n", .{ object.?.obj_t, object.?.is_marked });
             try object.?.blacken(vm);
         }
     }
@@ -146,12 +136,6 @@ pub const GCAllocator = struct {
         var previous: ?*Obj = null;
         var object = vm.objects;
         while (object) |o| {
-            // TODO: This is a workaround on a bug I still haven't figured out.
-            //if (o.is(.native)) {
-            //    previous = o;
-            //    object = o.next;
-            //    return;
-            //}
             if (o.is_marked) {
                 o.is_marked = false;
                 previous = o;
@@ -164,6 +148,8 @@ pub const GCAllocator = struct {
                 } else {
                     vm.objects = object;
                 }
+                std.debug.print("CALLED unreached.destroy()\n", .{});
+                self.bytes_allocated -= @sizeOf(@TypeOf(unreached));
                 unreached.destroy(vm);
             }
         }
@@ -171,19 +157,36 @@ pub const GCAllocator = struct {
 
     pub fn collectGarbage(self: *GCAllocator) !void {
         const vm = self.vm orelse return;
-        //const before = self.bytes_allocated;
+        const before = self.bytes_allocated;
+
+        if (comptime debug.log_gc) std.debug.print("BEFORE {d}\n", .{before});
+        if (comptime debug.log_gc) std.debug.print("BYTES ALLOCATED {d}\n", .{self.bytes_allocated});
         if (comptime debug.log_gc) std.debug.print("-- gc begin\n", .{});
 
         try self.markRoots();
         try self.traceReferences();
+        vm.globals.removeWhite();
         vm.strings.removeWhite();
         self.sweep();
 
-        self.next_gc = self.bytes_allocated *| GC_HEAP_GROW_FACTOR;
+        self.next_gc = self.bytes_allocated * GC_HEAP_GROW_FACTOR;
 
-        //if (comptime debug.log_gc) std.debug.print(
-        //     "-- gc end\ncollected {d} bytes (from {d} to {d}) next at {d}\n",
-        //     .{ before - self.bytes_allocated, before, self.bytes_allocated, self.next_gc },
-        // );
+        if (comptime debug.log_gc) std.debug.print(
+            "-- gc end\ncollected {d} bytes (from {d} to {d}) next at {d}\n",
+            .{ before - self.bytes_allocated, before, self.bytes_allocated, self.next_gc },
+        );
     }
 };
+
+test "gc" {
+    var gc = GCAllocator.init(std.heap.page_allocator);
+    const allocator = gc.allocator();
+
+    const vm = try VM.init(allocator);
+    gc.vm = vm;
+    //defer vm.deinit();
+
+    const str = try Obj.String.copy(vm, "hello");
+    _ = str;
+    try gc.collectGarbage();
+}

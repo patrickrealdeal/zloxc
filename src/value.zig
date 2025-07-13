@@ -84,6 +84,10 @@ pub const Value = union(Tag) {
                 try writer.print("<fn {s}>", .{name});
             },
             .upvalue => try writer.print("upvalue", .{}),
+            .class => {
+                const name = obj.as(Obj.Class).name;
+                try writer.print("class <{s}>", .{name.bytes});
+            },
         }
     }
 };
