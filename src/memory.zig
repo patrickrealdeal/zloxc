@@ -39,12 +39,12 @@ pub const GCAllocator = struct {
     fn alloc(ctx: *anyopaque, len: usize, ptr_align: std.mem.Alignment, ret_address: usize) ?[*]u8 {
         const self: *GCAllocator = @ptrCast(@alignCast(ctx));
         if ((self.bytes_allocated + len > self.next_gc) or debug.stress_gc) {
+            
             self.collectGarbage() catch return null;
         }
 
-        const result = self.parent_allocator.rawAlloc(len, ptr_align, ret_address);
-        if (result != null) self.bytes_allocated += len;
-        return result;
+        self.bytes_allocated += len;
+        return self.parent_allocator.rawAlloc(len, ptr_align, ret_address);
     }
 
     fn resize(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, new_len: usize, ret_address: usize) bool {
