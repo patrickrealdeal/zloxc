@@ -39,7 +39,6 @@ pub const GCAllocator = struct {
     fn alloc(ctx: *anyopaque, len: usize, ptr_align: std.mem.Alignment, ret_address: usize) ?[*]u8 {
         const self: *GCAllocator = @ptrCast(@alignCast(ctx));
         if ((self.bytes_allocated + len > self.next_gc) or debug.stress_gc) {
-            
             self.collectGarbage() catch return null;
         }
 
@@ -61,7 +60,6 @@ pub const GCAllocator = struct {
             } else {
                 self.bytes_allocated -= buf.len - new_len;
             }
-
         }
         std.debug.assert(new_len > buf.len);
         return self.parent_allocator.rawResize(buf, buf_align, new_len, ret_address);
@@ -148,7 +146,7 @@ pub const GCAllocator = struct {
                 } else {
                     vm.objects = object;
                 }
-                std.debug.print("CALLED unreached.destroy()\n", .{});
+                //std.debug.print("CALLED unreached.destroy()\n", .{});
                 self.bytes_allocated -= @sizeOf(@TypeOf(unreached));
                 unreached.destroy(vm);
             }

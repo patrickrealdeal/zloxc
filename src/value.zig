@@ -15,9 +15,7 @@ pub const Value = union(Tag) {
     obj: *Obj,
     nil,
 
-    pub fn format(self: Value, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(self: Value, writer: *std.Io.Writer) !void {
         switch (self) {
             .bool => |b| try writer.print("{any}", .{b}),
             .number => |n| try writer.print("{d}", .{n}),
@@ -68,29 +66,29 @@ pub const Value = union(Tag) {
         // and if present compares values
         return std.meta.eql(a, b);
     }
-
-    pub fn printObj(obj: *Obj, writer: anytype) !void {
-        switch (obj.obj_t) {
-            .string => try writer.print("{s}", .{obj.as(Obj.String).bytes}),
-            .function => {
-                const name = if (obj.as(Obj.Function).name) |str| str.bytes else "script";
-                try writer.print("<fn {s}>", .{name});
-            },
-            .native => {
-                try writer.print("<native fn>", .{});
-            },
-            .closure => {
-                const name = if (obj.as(Obj.Closure).func.name) |str| str.bytes else "script";
-                try writer.print("<fn {s}>", .{name});
-            },
-            .upvalue => try writer.print("upvalue", .{}),
-            .class => {
-                const name = obj.as(Obj.Class).name;
-                try writer.print("class <{s}>", .{name.bytes});
-            },
-        }
-    }
 };
+
+pub fn printObj(obj: *Obj, writer: *std.Io.Writer) !void {
+    switch (obj.obj_t) {
+        .string => try writer.print("{s}", .{obj.as(Obj.String).bytes}),
+        .function => {
+            const name = if (obj.as(Obj.Function).name) |str| str.bytes else "script";
+            try writer.print("<fn {s}>", .{name});
+        },
+        .native => {
+            try writer.print("<native fn>", .{});
+        },
+        .closure => {
+            const name = if (obj.as(Obj.Closure).func.name) |str| str.bytes else "script";
+            try writer.print("<fn {s}>", .{name});
+        },
+        .upvalue => try writer.print("upvalue", .{}),
+        .class => {
+            const name = obj.as(Obj.Class).name;
+            try writer.print("class <{s}>", .{name.bytes});
+        },
+    }
+}
 
 test "size of a Value" {
     try std.testing.expect(@sizeOf(Value) == 16);

@@ -35,7 +35,7 @@ pub fn Table(comptime KeyType: type, comptime ValueType: type) type {
 
         pub fn set(self: *@This(), key: KeyType, value: ValueType) !bool {
             return if (self.hm.fetchPut(key, value) catch {
-                std.debug.print("OOME: can't put the key to a table", .{});
+                std.debug.print("OOME: table out of memory", .{});
                 return VM.VmError.OutOfMemory;
             }) |_|
                 false // key is not new
@@ -55,7 +55,7 @@ pub fn Table(comptime KeyType: type, comptime ValueType: type) type {
             var it = self.hm.iterator();
             while (it.next()) |kv| {
                 if (!kv.key_ptr.*.isMarked()) {
-                    std.debug.print("!!!removed: {s}\n", .{kv.key_ptr.*.bytes});
+                    //std.debug.print("!!!removed: {s}\n", .{kv.key_ptr.*.bytes});
                     _ = self.delete(kv.key_ptr.*);
                 }
             }

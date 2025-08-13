@@ -44,7 +44,10 @@ pub fn scanToken(self: *Self) Token {
         '<' => if (self.match('=')) self.makeToken(.less_equal) else self.makeToken(.less),
         '>' => if (self.match('=')) self.makeToken(.greater_equal) else self.makeToken(.greater),
         '"' => return self.string(),
-        else => return self.errorToken("Unexpected character "),
+        else => {
+            std.debug.print("char {c}\n", .{c});
+            return self.errorToken("Unexpected character ");
+        },
     };
 }
 

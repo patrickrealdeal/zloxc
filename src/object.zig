@@ -46,7 +46,7 @@ pub fn is(self: *Obj, obj_t: ObjType) bool {
 
 pub fn mark(self: *Obj, vm: *VM) !void {
     if (self.is_marked) return;
-    if (comptime debug.log_gc) std.debug.print("{*} mark {}\n", .{ self, Value{ .obj = self } });
+    if (comptime debug.log_gc) std.debug.print("{*} mark {f}\n", .{ self, Value{ .obj = self } });
     self.is_marked = true;
     try vm.gray_stack.append(self);
 }
@@ -72,7 +72,7 @@ pub fn blacken(self: *Obj, vm: *VM) !void {
         },
         .class => {
             const class = self.as(Class);
-            try class.name.obj.mark(vm); 
+            try class.name.obj.mark(vm);
         },
     }
     //if (comptime debug.log_gc) std.debug.print("{*} blacken {}\n", .{ self, Value{ .obj = self } });

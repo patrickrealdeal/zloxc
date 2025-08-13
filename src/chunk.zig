@@ -134,7 +134,7 @@ fn closureInstruction(name: []const u8, chunk: *Chunk, offset: usize) usize {
     var new_offset: usize = offset + 1;
     const constant = chunk.code.items[new_offset];
     new_offset += 1;
-    std.debug.print("{s} {} '{}'\n", .{ name, constant, chunk.code.items[constant] });
+    std.debug.print("{s} {d} '{d}'\n", .{ name, constant, chunk.code.items[constant] });
 
     // Disassemble upvalues
     const func = chunk.constants.items[constant].asObj().as(Obj.Function);

@@ -146,8 +146,8 @@ fn run(self: *Self) !void {
             .greater => try self.binaryOp(.gt),
             .less => try self.binaryOp(.lt),
             .print => {
-                const writer = std.io.getStdOut().writer();
-                try writer.print("{}\n", .{self.pop()});
+                //const writer = std.io.getStdOut().writer();
+                std.debug.print("{f}\n", .{self.pop()});
             },
             .pop => _ = self.pop(),
             .define_global => {
@@ -404,15 +404,15 @@ inline fn traceStackExecution(self: *Self) void {
 }
 
 fn runtimeErr(self: *Self, comptime fmt: []const u8, args: anytype) !void {
-    const errWriter = std.io.getStdErr().writer();
-    errWriter.print(fmt ++ "\n", args) catch {};
+    //const errWriter = std.io.getStdErr().writer();
+    std.debug.print(fmt ++ "\n", args);
 
     while (self.frame_count > 0) {
         const frame = self.frame;
         const func = frame.closure.func;
         const line = func.chunk.lines.items[frame.ip];
         const name = if (func.name) |name| name.bytes else "<script>";
-        errWriter.print("[line {d}] in {s}.\n", .{ line, name }) catch {};
+        std.debug.print("[line {d}] in {s}.\n", .{ line, name });
         self.frame_count -= 1;
     }
 

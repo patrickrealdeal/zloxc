@@ -813,14 +813,15 @@ pub const Parser = struct {
         if (self.panic_mode) return;
 
         self.panic_mode = false;
-        const errWriter = std.io.getStdErr().writer();
-        errWriter.print("[line {d}] Error", .{token.line}) catch unreachable;
+        var stderr = std.fs.File.stderr().writer(&.{});
+        const err_writer = &stderr.interface;
+        err_writer.print("[line {d}] Error", .{token.line}) catch unreachable;
 
         switch (token.ttype) {
-            .eof => errWriter.writeAll(" at end") catch unreachable,
+            .eof => err_writer.writeAll(" at end") catch unreachable,
             .err => {},
-            else => errWriter.print(" at '{s}'", .{token.lexeme}) catch unreachable,
+            else => err_writer.print(" at '{s}'", .{token.lexeme}) catch unreachable,
         }
-        errWriter.print(": {s}\n", .{message}) catch unreachable;
+        err_writer.print(": {s}\n", .{message}) catch unreachable;
     }
 };
