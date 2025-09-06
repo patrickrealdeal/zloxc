@@ -53,7 +53,6 @@ pub const NanBoxedValue = packed struct {
         return @as(*Obj, @ptrFromInt(@as(u64, @intCast(v.bits & ~(SIGN_BIT | QNAN)))));
     }
 
-    // CONSTRUCTORS
     pub fn fromNumber(n: f64) NanBoxedValue {
         return .{ .bits = @bitCast(n) };
     }
@@ -80,8 +79,6 @@ pub const NanBoxedValue = packed struct {
         if (a.isNumber() and b.isNumber()) {
             return a.asNumber() == b.asNumber();
         }
-        // For nil, bools, and objects, a direct bit comparison is sufficient
-        // as long as you've properly canonicalized strings during interning.
         return a.bits == b.bits;
     }
 
@@ -95,7 +92,6 @@ pub const NanBoxedValue = packed struct {
         } else if (self.isObj()) {
             try printObj(self.asObj(), writer);
         } else {
-            // Should not happen
             try writer.print("Unknown Value", .{});
         }
     }
@@ -159,12 +155,6 @@ pub const UnionValue = union(Tag) {
     }
 
     pub fn eq(a: Value, b: Value) bool {
-        //if (std.meta.activeTag(a) == .obj and std.meta.activeTag(b) == .obj) {
-        //return std.mem.eql(u8, a.obj.as(Obj.String).bytes, b.obj.as(Obj.String).bytes);
-        //}
-        //
-        // std.meta.eql checks Tag equality
-        // and if present compares values
         return std.meta.eql(a, b);
     }
 };
