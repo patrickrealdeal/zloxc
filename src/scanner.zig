@@ -18,71 +18,71 @@ pub fn init(source: []const u8) Self {
     };
 }
 
-pub fn scanToken(self: *Self) Token {
-    self.skipWhitespace();
-    if (self.isAtEnd()) return self.makeToken(.eof);
-    self.start = self.current;
+pub fn scanToken(scanner: *Self) Token {
+    scanner.skipWhitespace();
+    if (scanner.isAtEnd()) return scanner.makeToken(.eof);
+    scanner.start = scanner.current;
 
-    const c = self.advance();
-    if (std.ascii.isAlphabetic(c)) return self.identifier();
-    if (std.ascii.isDigit(c)) return self.number();
+    const c = scanner.advance();
+    if (std.ascii.isAlphabetic(c)) return scanner.identifier();
+    if (std.ascii.isDigit(c)) return scanner.number();
 
     return switch (c) {
-        '(' => self.makeToken(.left_paren),
-        ')' => self.makeToken(.right_paren),
-        '{' => self.makeToken(.left_brace),
-        '}' => self.makeToken(.right_brace),
-        ';' => self.makeToken(.semicolon),
-        ',' => self.makeToken(.comma),
-        '.' => self.makeToken(.dot),
-        '-' => self.makeToken(.minus),
-        '+' => self.makeToken(.plus),
-        '*' => self.makeToken(.star),
-        '/' => self.makeToken(.slash),
-        '!' => if (self.match('=')) self.makeToken(.bang_equal) else self.makeToken(.bang),
-        '=' => if (self.match('=')) self.makeToken(.equal_equal) else self.makeToken(.equal),
-        '<' => if (self.match('=')) self.makeToken(.less_equal) else self.makeToken(.less),
-        '>' => if (self.match('=')) self.makeToken(.greater_equal) else self.makeToken(.greater),
-        '"' => return self.string(),
+        '(' => scanner.makeToken(.left_paren),
+        ')' => scanner.makeToken(.right_paren),
+        '{' => scanner.makeToken(.left_brace),
+        '}' => scanner.makeToken(.right_brace),
+        ';' => scanner.makeToken(.semicolon),
+        ',' => scanner.makeToken(.comma),
+        '.' => scanner.makeToken(.dot),
+        '-' => scanner.makeToken(.minus),
+        '+' => scanner.makeToken(.plus),
+        '*' => scanner.makeToken(.star),
+        '/' => scanner.makeToken(.slash),
+        '!' => if (scanner.match('=')) scanner.makeToken(.bang_equal) else scanner.makeToken(.bang),
+        '=' => if (scanner.match('=')) scanner.makeToken(.equal_equal) else scanner.makeToken(.equal),
+        '<' => if (scanner.match('=')) scanner.makeToken(.less_equal) else scanner.makeToken(.less),
+        '>' => if (scanner.match('=')) scanner.makeToken(.greater_equal) else scanner.makeToken(.greater),
+        '"' => return scanner.string(),
         else => {
             std.debug.print("char {c}\n", .{c});
-            return self.errorToken("Unexpected character ");
+            return scanner.errorToken("Unexpected character ");
         },
     };
 }
 
-pub fn makeToken(self: *Self, ttype: TokenType) Token {
+pub fn makeToken(scanner: *Self, ttype: TokenType) Token {
     return Token{
         .ttype = ttype,
-        .lexeme = self.source[self.start..self.current],
-        .line = self.line,
+        .lexeme = scanner.source[scanner.start..scanner.current],
+        .line = scanner.line,
     };
 }
 
-fn match(self: *Self, char: u8) bool {
-    if (self.isAtEnd()) {
+fn match(scanner: *Self, char: u8) bool {
+    if (scanner.isAtEnd()) {
         return false;
     }
-    if (self.source[self.current] != char) {
+    if (scanner.source[scanner.current] != char) {
         return false;
     }
 
-    _ = self.advance();
+    _ = scanner.advance();
     return true;
 }
 
-fn skipWhitespace(self: *Self) void {
+fn skipWhitespace(scanner: *Self) void {
     while (true) {
-        switch (self.peek()) {
-            ' ', '\t', '\r' => _ = self.advance(),
+        switch (scanner.peek()) {
+            ' ', '\t', '\r' => _ = scanner.advance(),
             '\n' => {
-                self.line += 1;
-                _ = self.advance();
+                scanner.line += 1;
+                _ = scanner.advance();
             },
             '/' => {
-                if (self.peekNext() == '/') {
-                    while (self.peek() != '\n' and !self.isAtEnd()) {
-                        _ = self.advance();
+                if (scanner.peekNext() == '/') {
+                    while (scanner.peek() != '\n' and !scanner.isAtEnd()) {
+                        _ = scanner.advance();
                     }
                 } else {
                     return;
@@ -93,102 +93,102 @@ fn skipWhitespace(self: *Self) void {
     }
 }
 
-fn string(self: *Self) Token {
-    while (self.peek() != '"' and !self.isAtEnd()) {
-        if (self.peek() == '\n') {
-            self.line += 1;
+fn string(scanner: *Self) Token {
+    while (scanner.peek() != '"' and !scanner.isAtEnd()) {
+        if (scanner.peek() == '\n') {
+            scanner.line += 1;
         }
-        _ = self.advance();
+        _ = scanner.advance();
     }
 
-    if (self.isAtEnd()) return self.errorToken("Unterminated string");
+    if (scanner.isAtEnd()) return scanner.errorToken("Unterminated string");
 
     // The closing quote
-    _ = self.advance();
-    return self.makeToken(.string);
+    _ = scanner.advance();
+    return scanner.makeToken(.string);
 }
 
-fn number(self: *Self) Token {
-    while (std.ascii.isDigit(self.peek())) {
-        _ = self.advance();
+fn number(scanner: *Self) Token {
+    while (std.ascii.isDigit(scanner.peek())) {
+        _ = scanner.advance();
     }
 
     // Look for a fractional part
-    if (self.peek() == '.' and std.ascii.isDigit(self.peekNext())) {
+    if (scanner.peek() == '.' and std.ascii.isDigit(scanner.peekNext())) {
         // Consume the '.'
-        _ = self.advance();
+        _ = scanner.advance();
 
-        while (std.ascii.isDigit(self.peek())) {
-            _ = self.advance();
+        while (std.ascii.isDigit(scanner.peek())) {
+            _ = scanner.advance();
         }
     }
 
-    return self.makeToken(.number);
+    return scanner.makeToken(.number);
 }
 
-fn identifier(self: *Self) Token {
-    while (std.ascii.isAlphabetic(self.peek()) or std.ascii.isDigit(self.peek())) _ = self.advance();
-    return self.makeToken(self.identifierType());
+fn identifier(scanner: *Self) Token {
+    while (std.ascii.isAlphabetic(scanner.peek()) or std.ascii.isDigit(scanner.peek())) _ = scanner.advance();
+    return scanner.makeToken(scanner.identifierType());
 }
 
-fn identifierType(self: *Self) TokenType {
-    return switch (self.source[self.start]) {
-        'a' => self.checkKeyword("and", .@"and"),
-        'c' => self.checkKeyword("class", .class),
-        'e' => self.checkKeyword("else", .@"else"),
-        'i' => self.checkKeyword("if", .@"if"),
-        'n' => self.checkKeyword("nil", .nil),
-        'o' => self.checkKeyword("or", .@"or"),
-        'p' => self.checkKeyword("print", .print),
-        'r' => self.checkKeyword("return", .@"return"),
-        's' => self.checkKeyword("super", .super),
-        'v' => self.checkKeyword("var", .@"var"),
-        'w' => self.checkKeyword("while", .@"while"),
-        'f' => switch (self.source[self.start + 1]) {
-            'a' => self.checkKeyword("false", .false),
-            'o' => self.checkKeyword("for", .@"for"),
-            'u' => self.checkKeyword("fun", .fun),
+fn identifierType(scanner: *Self) TokenType {
+    return switch (scanner.source[scanner.start]) {
+        'a' => scanner.checkKeyword("and", .@"and"),
+        'c' => scanner.checkKeyword("class", .class),
+        'e' => scanner.checkKeyword("else", .@"else"),
+        'i' => scanner.checkKeyword("if", .@"if"),
+        'n' => scanner.checkKeyword("nil", .nil),
+        'o' => scanner.checkKeyword("or", .@"or"),
+        'p' => scanner.checkKeyword("print", .print),
+        'r' => scanner.checkKeyword("return", .@"return"),
+        's' => scanner.checkKeyword("super", .super),
+        'v' => scanner.checkKeyword("var", .@"var"),
+        'w' => scanner.checkKeyword("while", .@"while"),
+        'f' => switch (scanner.source[scanner.start + 1]) {
+            'a' => scanner.checkKeyword("false", .false),
+            'o' => scanner.checkKeyword("for", .@"for"),
+            'u' => scanner.checkKeyword("fun", .fun),
             else => .identifier,
         },
-        't' => switch (self.source[self.start + 1]) {
-            'r' => self.checkKeyword("true", .true),
-            'h' => self.checkKeyword("this", .this),
+        't' => switch (scanner.source[scanner.start + 1]) {
+            'r' => scanner.checkKeyword("true", .true),
+            'h' => scanner.checkKeyword("this", .this),
             else => .identifier,
         },
         else => .identifier,
     };
 }
 
-fn checkKeyword(self: *Self, keyword: []const u8, ttype: TokenType) TokenType {
-    if (std.mem.eql(u8, keyword, self.source[self.start..self.current])) {
+fn checkKeyword(scanner: *Self, keyword: []const u8, ttype: TokenType) TokenType {
+    if (std.mem.eql(u8, keyword, scanner.source[scanner.start..scanner.current])) {
         return ttype;
     }
     return .identifier;
 }
 
-inline fn peek(self: *Self) u8 {
-    if (self.isAtEnd()) return 0;
-    return self.source[self.current];
+inline fn peek(scanner: *Self) u8 {
+    if (scanner.isAtEnd()) return 0;
+    return scanner.source[scanner.current];
 }
 
-inline fn peekNext(self: *Self) u8 {
-    if (self.isAtEnd()) return 0;
-    return self.source[self.current + 1];
+inline fn peekNext(scanner: *Self) u8 {
+    if (scanner.isAtEnd()) return 0;
+    return scanner.source[scanner.current + 1];
 }
 
-fn errorToken(self: *Self, message: []const u8) Token {
+fn errorToken(scanner: *Self, message: []const u8) Token {
     return Token{
         .ttype = .err,
         .lexeme = message,
-        .line = self.line,
+        .line = scanner.line,
     };
 }
 
-fn advance(self: *Self) u8 {
-    self.current += 1;
-    return self.source[self.current - 1];
+fn advance(scanner: *Self) u8 {
+    scanner.current += 1;
+    return scanner.source[scanner.current - 1];
 }
 
-pub fn isAtEnd(self: *Self) bool {
-    return self.current >= self.source.len;
+pub fn isAtEnd(scanner: *Self) bool {
+    return scanner.current >= scanner.source.len;
 }

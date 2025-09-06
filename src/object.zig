@@ -36,34 +36,34 @@ pub fn create(vm: *VM, comptime T: type, obj_t: ObjType) !*T {
     return ptr_t;
 }
 
-pub fn as(self: *Obj, comptime T: type) *T {
-    return @alignCast(@fieldParentPtr("obj", self));
+pub fn as(object: *Obj, comptime T: type) *T {
+    return @alignCast(@fieldParentPtr("obj", object));
 }
 
-pub fn is(self: *Obj, obj_t: ObjType) bool {
-    return self.obj_t == obj_t;
+pub fn is(object: *Obj, obj_t: ObjType) bool {
+    return object.obj_t == obj_t;
 }
 
-pub fn mark(self: *Obj, vm: *VM) !void {
-    if (self.is_marked) return;
-    if (comptime debug.log_gc) std.debug.print("{*} mark {f}\n", .{ self, Value{ .obj = self } });
-    self.is_marked = true;
-    try vm.gray_stack.append(self);
+pub fn mark(object: *Obj, vm: *VM) !void {
+    if (object.is_marked) return;
+    if (comptime debug.log_gc) std.debug.print("{*} mark {f}\n", .{ object, Value{ .obj = object } });
+    object.is_marked = true;
+    try vm.gray_stack.append(vm.allocator, object);
 }
 
-pub fn blacken(self: *Obj, vm: *VM) !void {
-    switch (self.obj_t) {
+pub fn blacken(object: *Obj, vm: *VM) !void {
+    switch (object.obj_t) {
         .native, .string => return,
-        .upvalue => try self.as(Upvalue).closed.mark(vm),
+        .upvalue => try object.as(Upvalue).closed.mark(vm),
         .function => {
-            const function = self.as(Function);
+            const function = object.as(Function);
             if (function.name) |name| {
                 try name.obj.mark(vm);
             }
             try function.markConstants(vm);
         },
         .closure => {
-            const closure = self.as(Closure);
+            const closure = object.as(Closure);
             try closure.func.obj.mark(vm);
             for (0..closure.func.upvalue_count) |i| {
                 if (closure.upvalues[i]) |upvalue|
@@ -71,38 +71,38 @@ pub fn blacken(self: *Obj, vm: *VM) !void {
             }
         },
         .class => {
-            const class = self.as(Class);
+            const class = object.as(Class);
             try class.name.obj.mark(vm);
         },
     }
     //if (comptime debug.log_gc) std.debug.print("{*} blacken {}\n", .{ self, Value{ .obj = self } });
 }
 
-pub fn destroy(obj: *Obj, vm: *VM) void {
-    switch (obj.obj_t) {
+pub fn destroy(object: *Obj, vm: *VM) void {
+    switch (object.obj_t) {
         .string => {
-            const self: *String = @fieldParentPtr("obj", obj);
-            self.destroy(vm);
+            const obj: *String = @fieldParentPtr("obj", object);
+            obj.destroy(vm);
         },
         .function => {
-            const self: *Function = @fieldParentPtr("obj", obj);
-            self.destroy(vm);
+            const obj: *Function = @fieldParentPtr("obj", object);
+            obj.destroy(vm);
         },
         .native => {
-            const self: *Native = @fieldParentPtr("obj", obj);
-            self.destroy(vm);
+            const obj: *Native = @fieldParentPtr("obj", object);
+            obj.destroy(vm);
         },
         .closure => {
-            const self: *Closure = @fieldParentPtr("obj", obj);
-            self.destroy(vm);
+            const obj: *Closure = @fieldParentPtr("obj", object);
+            obj.destroy(vm);
         },
         .upvalue => {
-            const self: *Upvalue = @fieldParentPtr("obj", obj);
-            self.destroy(vm);
+            const obj: *Upvalue = @fieldParentPtr("obj", object);
+            obj.destroy(vm);
         },
         .class => {
-            const self: *Class = @fieldParentPtr("obj", obj);
-            self.destroy(vm);
+            const obj: *Class = @fieldParentPtr("obj", object);
+            obj.destroy(vm);
         },
     }
 }
@@ -148,27 +148,27 @@ pub const String = struct {
         return str;
     }
 
-    pub fn mark(self: *String, vm: *VM) !void {
-        try self.obj.mark(vm);
+    pub fn mark(object: *String, vm: *VM) !void {
+        try object.obj.mark(vm);
     }
 
-    pub fn equal(self: *String, other: *String) bool {
-        return (self.bytes.len == other.bytes.len) and
-            std.mem.eql(u8, self.bytes, other.bytes);
+    pub fn equal(object: *String, other: *String) bool {
+        return (object.bytes.len == other.bytes.len) and
+            std.mem.eql(u8, object.bytes, other.bytes);
     }
 
-    pub fn getHash(self: *String) u32 {
-        return self.hash;
+    pub fn getHash(object: *String) u32 {
+        return object.hash;
     }
 
-    pub fn isMarked(self: *String) bool {
-        return self.obj.is_marked;
+    pub fn isMarked(object: *String) bool {
+        return object.obj.is_marked;
     }
 
-    pub fn destroy(self: *String, vm: *VM) void {
-        if (self.owns_bytes) {
-            vm.allocator.free(self.bytes);
-            vm.allocator.destroy(self);
+    pub fn destroy(object: *String, vm: *VM) void {
+        if (object.owns_bytes) {
+            vm.allocator.free(object.bytes);
+            vm.allocator.destroy(object);
         }
     }
 };
@@ -189,13 +189,13 @@ pub const Function = struct {
         return func;
     }
 
-    pub fn destroy(self: *Function, vm: *VM) void {
-        self.chunk.deinit();
-        vm.allocator.destroy(self);
+    pub fn destroy(object: *Function, vm: *VM) void {
+        object.chunk.deinit();
+        vm.allocator.destroy(object);
     }
 
-    pub fn markConstants(self: *Function, vm: *VM) !void {
-        for (self.chunk.constants.items) |constant| {
+    pub fn markConstants(object: *Function, vm: *VM) !void {
+        for (object.chunk.constants.items) |constant| {
             try constant.mark(vm);
         }
     }
@@ -206,7 +206,7 @@ pub const Native = struct {
     func: NativeFn,
     name: []const u8,
 
-    pub const NativeFn = *const fn (arg_count: u8) Value;
+    pub const NativeFn = *const fn (vm: *VM, arg_count: u8) anyerror!Value;
 
     pub fn allocate(vm: *VM, func: NativeFn, name: []const u8) !*Native {
         const native = try Obj.create(vm, Native, .native);
@@ -215,12 +215,8 @@ pub const Native = struct {
         return native;
     }
 
-    pub fn mark(_: *Obj.Native, _: *VM) !void {
-        // No internal references in Native, but acknowledge its existence
-    }
-
-    pub fn destroy(self: *Native, vm: *VM) void {
-        vm.allocator.destroy(self);
+    pub fn destroy(object: *Native, vm: *VM) void {
+        vm.allocator.destroy(object);
     }
 };
 
@@ -239,9 +235,9 @@ pub const Closure = struct {
         return closure;
     }
 
-    pub fn destroy(self: *Closure, vm: *VM) void {
-        vm.allocator.free(self.upvalues);
-        vm.allocator.destroy(self);
+    pub fn destroy(object: *Closure, vm: *VM) void {
+        vm.allocator.free(object.upvalues);
+        vm.allocator.destroy(object);
     }
 };
 
@@ -259,8 +255,8 @@ pub const Upvalue = struct {
         return upvalue;
     }
 
-    pub fn destroy(self: *Upvalue, vm: *VM) void {
-        vm.allocator.destroy(self);
+    pub fn destroy(object: *Upvalue, vm: *VM) void {
+        vm.allocator.destroy(object);
     }
 };
 
@@ -275,11 +271,11 @@ pub const Class = struct {
         return class;
     }
 
-    pub fn mark(self: *String, vm: *VM) !void {
-        try self.obj.mark(vm);
+    pub fn mark(object: *String, vm: *VM) !void {
+        try object.mark(vm);
     }
 
-    fn destroy(self: *Class, vm: *VM) void {
-        vm.allocator.destroy(self);
+    fn destroy(object: *Class, vm: *VM) void {
+        vm.allocator.destroy(object);
     }
 };

@@ -4,11 +4,11 @@ const String = @import("object.zig").String;
 const VM = @import("vm.zig");
 
 const table_max_load = 75;
-const Self = @This();
 
 pub fn Table(comptime KeyType: type, comptime ValueType: type) type {
     return struct {
         hm: std.HashMap(KeyType, ValueType, Ctx, table_max_load),
+        const HT = *@This();
 
         const Ctx = struct {
             pub fn hash(_: Ctx, key: KeyType) u64 {
@@ -24,45 +24,45 @@ pub fn Table(comptime KeyType: type, comptime ValueType: type) type {
             return .{ .hm = std.HashMap(KeyType, ValueType, Ctx, table_max_load).init(allocator) };
         }
 
-        pub fn deinit(self: *@This()) void {
-            self.hm.deinit();
+        pub fn deinit(table: HT) void {
+            table.hm.deinit();
         }
 
-        pub fn findString(self: *@This(), chars: []const u8, hash: u32) ?*String {
+        pub fn findString(table: HT, chars: []const u8, hash: u32) ?*String {
             var s = String{ .obj = undefined, .hash = hash, .bytes = chars };
-            return self.hm.getKey(&s);
+            return table.hm.getKey(&s);
         }
 
-        pub fn set(self: *@This(), key: KeyType, value: ValueType) !bool {
-            return if (self.hm.fetchPut(key, value) catch {
-                std.debug.print("OOME: table out of memory", .{});
-                return VM.VmError.OutOfMemory;
+        pub fn set(table: HT, key: KeyType, value: ValueType) !bool {
+            return if (table.hm.fetchPut(key, value) catch {
+                std.debug.print("OOME: can't put the key to a table", .{});
+                return VM.VMError.OutOfMemory;
             }) |_|
                 false // key is not new
             else
                 true;
         }
 
-        pub fn get(self: *@This(), key: KeyType) ?ValueType {
-            return self.hm.get(key);
+        pub fn get(table: HT, key: KeyType) ?ValueType {
+            return table.hm.get(key);
         }
 
-        pub fn delete(self: *@This(), key: KeyType) bool {
-            return self.hm.remove(key);
+        pub fn delete(table: HT, key: KeyType) bool {
+            return table.hm.remove(key);
         }
 
-        pub fn removeWhite(self: *@This()) void {
-            var it = self.hm.iterator();
+        pub fn removeWhite(table: HT) void {
+            var it = table.hm.iterator();
             while (it.next()) |kv| {
                 if (!kv.key_ptr.*.isMarked()) {
-                    //std.debug.print("!!!removed: {s}\n", .{kv.key_ptr.*.bytes});
-                    _ = self.delete(kv.key_ptr.*);
+                    std.debug.print("!!!removed: {s}\n", .{kv.key_ptr.*.bytes});
+                    _ = table.delete(kv.key_ptr.*);
                 }
             }
         }
 
-        pub fn mark(self: *@This(), vm: *VM) !void {
-            var it = self.hm.iterator();
+        pub fn mark(table: HT, vm: *VM) !void {
+            var it = table.hm.iterator();
             while (it.next()) |kv| {
                 try kv.key_ptr.*.mark(vm);
                 try kv.value_ptr.*.mark(vm);
