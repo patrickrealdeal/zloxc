@@ -41,52 +41,54 @@ const Sign = enum { neg, pos };
 code: std.ArrayList(u8),
 constants: std.ArrayList(Value),
 lines: std.ArrayList(usize),
+allocator: std.mem.Allocator,
 
 pub fn init(allocator: std.mem.Allocator) Chunk {
     return Chunk{
-        .code = std.ArrayList(u8).init(allocator),
-        .constants = std.ArrayList(Value).init(allocator),
-        .lines = std.ArrayList(usize).init(allocator),
+        .code = .empty,
+        .constants = .empty,
+        .lines = .empty,
+        .allocator = allocator,
     };
 }
 
-pub fn deinit(self: *Chunk) void {
-    self.code.deinit();
-    self.constants.deinit();
-    self.lines.deinit();
+pub fn deinit(chunk: *Chunk) void {
+    chunk.code.deinit(chunk.allocator);
+    chunk.constants.deinit(chunk.allocator);
+    chunk.lines.deinit(chunk.allocator);
 }
 
 /// returns index where constants was appended
-pub fn addConstant(self: *Chunk, value: Value) !usize {
-    try self.constants.append(value);
-    return self.constants.items.len - 1;
+pub fn addConstant(chunk: *Chunk, value: Value) !usize {
+    try chunk.constants.append(chunk.allocator, value);
+    return chunk.constants.items.len - 1;
 }
 
-pub fn write(self: *Chunk, byte: u8, line: usize) !void {
-    try self.code.append(byte);
-    try self.lines.append(line);
+pub fn write(chunk: *Chunk, byte: u8, line: usize) !void {
+    try chunk.code.append(chunk.allocator, byte);
+    try chunk.lines.append(chunk.allocator, line);
 }
 
-pub fn disassemble(self: *Chunk, name: []const u8) void {
+pub fn disassemble(chunk: *Chunk, name: []const u8) void {
     std.debug.print("=== {s} ===\n", .{name});
 
     var offset: usize = 0;
-    while (offset < self.code.items.len) {
-        offset = self.disassembleInstruction(offset);
+    while (offset < chunk.code.items.len) {
+        offset = chunk.disassembleInstruction(offset);
     }
 }
 
-pub fn disassembleInstruction(self: *Chunk, offset: usize) usize {
+pub fn disassembleInstruction(chunk: *Chunk, offset: usize) usize {
     std.debug.print("{d:0>4}", .{offset});
-    if (offset > 0 and self.lines.items[offset] == self.lines.items[offset - 1]) {
+    if (offset > 0 and chunk.lines.items[offset] == chunk.lines.items[offset - 1]) {
         std.debug.print("    | ", .{});
     } else {
-        std.debug.print("{d:4}  ", .{self.lines.items[offset]});
+        std.debug.print("{d:4}  ", .{chunk.lines.items[offset]});
     }
 
-    const instruction: OpCode = @enumFromInt(self.code.items[offset]);
+    const instruction: OpCode = @enumFromInt(chunk.code.items[offset]);
     switch (instruction) {
-        .constant => return constantInstruction("op_constant", self, offset),
+        .constant => return constantInstruction("op_constant", chunk, offset),
         .negate => return simpleInstruction("op_negate", offset),
         .add => return simpleInstruction("op_add", offset),
         .sub => return simpleInstruction("op_sub", offset),
@@ -101,18 +103,18 @@ pub fn disassembleInstruction(self: *Chunk, offset: usize) usize {
         .less => return simpleInstruction("op_less", offset),
         .print => return simpleInstruction("op_print", offset),
         .pop => return simpleInstruction("op_pop", offset),
-        .define_global => return constantInstruction("op_define_global", self, offset),
-        .get_global => return constantInstruction("op_get_global", self, offset),
-        .set_global => return constantInstruction("op_set_global", self, offset),
-        .get_local => return byteInstruction("op_get_local", self, offset),
-        .set_local => return byteInstruction("op_set_local", self, offset),
-        .get_upvalue => return byteInstruction("op_get_upvalue", self, offset),
-        .set_upvalue => return byteInstruction("op_set_upvalue", self, offset),
-        .jump_if_false => return jumpInstruction("op_jump_if_false", .pos, self, offset),
-        .jump => return jumpInstruction("op_jump", .pos, self, offset),
-        .loop => return jumpInstruction("op_loop", .neg, self, offset),
-        .call => return byteInstruction("op_call", self, offset),
-        .closure => return closureInstruction("op_closure", self, offset),
+        .define_global => return constantInstruction("op_define_global", chunk, offset),
+        .get_global => return constantInstruction("op_get_global", chunk, offset),
+        .set_global => return constantInstruction("op_set_global", chunk, offset),
+        .get_local => return byteInstruction("op_get_local", chunk, offset),
+        .set_local => return byteInstruction("op_set_local", chunk, offset),
+        .get_upvalue => return byteInstruction("op_get_upvalue", chunk, offset),
+        .set_upvalue => return byteInstruction("op_set_upvalue", chunk, offset),
+        .jump_if_false => return jumpInstruction("op_jump_if_false", .pos, chunk, offset),
+        .jump => return jumpInstruction("op_jump", .pos, chunk, offset),
+        .loop => return jumpInstruction("op_loop", .neg, chunk, offset),
+        .call => return byteInstruction("op_call", chunk, offset),
+        .closure => return closureInstruction("op_closure", chunk, offset),
         .close_upvalue => return simpleInstruction("op_close_upvalue", offset),
         .ret => return simpleInstruction("op_ret", offset),
     }
@@ -126,7 +128,7 @@ fn simpleInstruction(name: []const u8, offset: usize) usize {
 fn constantInstruction(name: []const u8, chunk: *Chunk, offset: usize) usize {
     const constant_idx = chunk.code.items[offset + 1];
     const constant = chunk.constants.items[constant_idx];
-    std.debug.print("{s: <16} {d:4} '{d}'\n", .{ name, constant, constant_idx });
+    std.debug.print("{s: <16} \"{f}\" '{d}'\n", .{ name, constant, constant_idx });
     return offset + 2;
 }
 
@@ -134,7 +136,7 @@ fn closureInstruction(name: []const u8, chunk: *Chunk, offset: usize) usize {
     var new_offset: usize = offset + 1;
     const constant = chunk.code.items[new_offset];
     new_offset += 1;
-    std.debug.print("{s} {d} '{d}'\n", .{ name, constant, chunk.code.items[constant] });
+    std.debug.print("\"{s}\" {d} '{d}'\n", .{ name, constant, chunk.code.items[constant] });
 
     // Disassemble upvalues
     const func = chunk.constants.items[constant].asObj().as(Obj.Function);
