@@ -12,7 +12,7 @@ pub fn FixedCapacityStack(comptime T: type) type {
         pub fn init(allocator: Allocator, capacity: usize) !Self {
             var buffer = try allocator.alloc(T, capacity);
 
-            return .{
+            return Self{
                 .buffer = buffer,
                 .items = buffer[0..0],
                 .allocator = allocator,

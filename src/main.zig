@@ -1,9 +1,8 @@
 const std = @import("std");
 const VM = @import("vm.zig");
 const GCAllocator = @import("memory.zig").GCAllocator;
-const Allocator = std.mem.Allocator;
 
-pub fn main() !void {
+pub fn main() !u8 {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer _ = arena.deinit();
     const arena_allocator = arena.allocator();
@@ -28,15 +27,19 @@ pub fn main() !void {
     const writer = &stdout.interface;
 
     switch (args.inner.count) {
-        1 => try repl(vm, writer, reader),
-        2 => try runFile(vm, args.next().?, arena_allocator),
+        1 => {
+            try repl(vm, writer, reader);
+        },
+        2 => {
+            try runFile(vm, args.next().?, arena_allocator);
+        },
         else => {
             std.debug.print("Usage: {s} zloxc [path]\n", .{name});
             return std.process.exit(64);
         },
     }
 
-    try writer.flush();
+    return 0;
 }
 
 fn repl(vm: *VM, writer: *std.Io.Writer, reader: *std.Io.Reader) !void {
@@ -53,14 +56,14 @@ fn repl(vm: *VM, writer: *std.Io.Writer, reader: *std.Io.Reader) !void {
     }
 }
 
-fn runFile(vm: *VM, filename: []const u8, allocator: Allocator) !void {
+fn runFile(vm: *VM, filename: []const u8, allocator: std.mem.Allocator) !void {
     const source = try readFile(filename, allocator);
     defer allocator.free(source);
 
     try vm.interpret(source);
 }
 
-fn readFile(path: []const u8, allocator: Allocator) ![]const u8 {
+fn readFile(path: []const u8, allocator: std.mem.Allocator) ![]const u8 {
     const file = std.fs.cwd().openFile(path, .{}) catch |err| {
         std.debug.print("Could not open file \"{s}\". error {any}\n", .{ path, err });
         std.process.exit(74);

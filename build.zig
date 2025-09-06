@@ -1,3 +1,4 @@
+//! Use `zig init --strip` next time to generate a project without comments.
 const std = @import("std");
 
 // Although this function looks imperative, it does not perform the build

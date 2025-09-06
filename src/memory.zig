@@ -14,7 +14,6 @@ pub const GCAllocator = struct {
     parent_allocator: std.mem.Allocator,
     bytes_allocated: usize,
     next_gc: usize,
-    is_collecting: bool,
 
     pub fn init(parent_allocator: std.mem.Allocator) GCAllocator {
         return .{
@@ -22,13 +21,12 @@ pub const GCAllocator = struct {
             .parent_allocator = parent_allocator,
             .bytes_allocated = 0,
             .next_gc = 4,
-            .is_collecting = false,
         };
     }
 
-    pub fn allocator(gca: *GCAllocator) std.mem.Allocator {
+    pub fn allocator(self: *GCAllocator) std.mem.Allocator {
         return .{
-            .ptr = gca,
+            .ptr = self,
             .vtable = &.{
                 .alloc = alloc,
                 .resize = resize,
@@ -39,92 +37,53 @@ pub const GCAllocator = struct {
     }
 
     fn alloc(ctx: *anyopaque, len: usize, ptr_align: std.mem.Alignment, ret_address: usize) ?[*]u8 {
-        const gca: *GCAllocator = @ptrCast(@alignCast(ctx));
-        if ((gca.bytes_allocated + len > gca.next_gc) or debug.stress_gc) {
-            gca.collectGarbage() catch return null;
+        const self: *GCAllocator = @ptrCast(@alignCast(ctx));
+        if ((self.bytes_allocated + len > self.next_gc) or debug.stress_gc) {
+            self.collectGarbage() catch return null;
         }
 
-        if (!gca.is_collecting) {
-            gca.bytes_allocated += len;
-        }
-
-        //gca.bytes_allocated += len;
-        return gca.parent_allocator.rawAlloc(len, ptr_align, ret_address);
+        self.bytes_allocated += len;
+        return self.parent_allocator.rawAlloc(len, ptr_align, ret_address);
     }
 
     fn resize(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, new_len: usize, ret_address: usize) bool {
-        const gca: *GCAllocator = @ptrCast(@alignCast(ctx));
+        const self: *GCAllocator = @ptrCast(@alignCast(ctx));
         if (new_len > buf.len) {
-            if ((gca.bytes_allocated + (new_len - buf.len) > gca.next_gc) or debug.stress_gc) {
-                gca.collectGarbage() catch return false;
+            if ((self.bytes_allocated + (new_len - buf.len) > self.next_gc) or debug.stress_gc) {
+                self.collectGarbage() catch return false;
             }
         }
 
-        if (gca.parent_allocator.rawResize(buf, buf_align, new_len, ret_address)) {
-            if (!gca.is_collecting) {
-                if (new_len > buf.len) {
-                    gca.bytes_allocated += new_len - buf.len;
-                } else {
-                    gca.bytes_allocated -= buf.len - new_len;
-                }
+        if (self.parent_allocator.rawResize(buf, buf_align, new_len, ret_address)) {
+            if (new_len > buf.len) {
+                self.bytes_allocated += new_len - buf.len;
+            } else {
+                self.bytes_allocated -= buf.len - new_len;
             }
-            return true;
         }
         std.debug.assert(new_len > buf.len);
-        return false;
-        //return gca.parent_allocator.rawResize(buf, buf_align, new_len, ret_address);
+        return self.parent_allocator.rawResize(buf, buf_align, new_len, ret_address);
     }
 
-    //fn remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
-    //_ = ctx;
-    //_ = memory;
-    //_ = new_len;
-    //_ = alignment;
-    //_ = ret_addr;
-    //return null;
-    //}
-
     fn remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
+        _ = ctx;
+        _ = memory;
+        _ = new_len;
         _ = alignment;
         _ = ret_addr;
-        const gca: *GCAllocator = @ptrCast(@alignCast(ctx));
-
-        // Calculate the change in memory size.
-        const delta_bytes = if (new_len > memory.len) new_len - memory.len else 0;
-
-        // Trigger garbage collection if needed before allocating more memory.
-        if ((gca.bytes_allocated + delta_bytes > gca.next_gc) or debug.stress_gc) {
-            gca.collectGarbage() catch return null;
-        }
-
-        // Use the parent allocator to perform the remapping.
-        const new_ptr = gca.parent_allocator.realloc(memory, new_len) catch return null orelse {
-            // If realloc fails, return null.
-            return null;
-        };
-
-        // Update the allocated bytes counter.
-        if (!gca.is_collecting) {
-            if (new_len > memory.len) {
-                gca.bytes_allocated += delta_bytes;
-            } else {
-                gca.bytes_allocated -= memory.len - new_len;
-            }
-        }
-
-        return new_ptr.ptr;
+        return null;
     }
 
     fn free(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, ret_address: usize) void {
-        const gca: *GCAllocator = @ptrCast(@alignCast(ctx));
-        gca.parent_allocator.rawFree(buf, buf_align, ret_address);
-        gca.bytes_allocated -= buf.len;
+        const self: *GCAllocator = @ptrCast(@alignCast(ctx));
+        self.parent_allocator.rawFree(buf, buf_align, ret_address);
+        self.bytes_allocated -= buf.len;
     }
 
     // Garbage collector implementation
 
-    fn markCompilerRoots(gca: *GCAllocator) !void {
-        const vm = gca.vm orelse return;
+    fn markCompilerRoots(self: *GCAllocator) !void {
+        const vm = self.vm orelse return;
         if (vm.parser) |p| {
             var comp: ?*Compiler = p.compiler;
             while (comp) |c| {
@@ -134,8 +93,9 @@ pub const GCAllocator = struct {
         }
     }
 
-    fn markRoots(gca: *GCAllocator) !void {
-        const vm = gca.vm orelse return;
+    fn markRoots(self: *GCAllocator) !void {
+        //std.debug.print("Called MARKROOTS\n", .{});
+        const vm = self.vm orelse return;
 
         for (vm.stack.items) |item| {
             try item.mark(vm);
@@ -155,23 +115,22 @@ pub const GCAllocator = struct {
         }
 
         //try vm.strings.mark(vm);
-        try gca.markCompilerRoots();
+        try self.markCompilerRoots();
     }
 
-    fn traceReferences(gca: *GCAllocator) !void {
-        const vm = gca.vm orelse return;
+    fn traceReferences(self: *GCAllocator) !void {
+        const vm = self.vm orelse return;
 
         while (vm.gray_stack.items.len > 0) {
-            // NOTE: Unwrapping here
-            const object = vm.gray_stack.pop().?;
+            const object = vm.gray_stack.pop();
 
-            if (comptime debug.log_gc) std.debug.print("GS: {} {any}\n", .{ object.obj_t, object.is_marked });
-            try object.blacken(vm);
+            if (comptime debug.stress_gc) std.debug.print("GS: {} {any}\n", .{ object.?.obj_t, object.?.is_marked });
+            try object.?.blacken(vm);
         }
     }
 
-    fn sweep(gca: *GCAllocator) void {
-        const vm = gca.vm orelse return;
+    fn sweep(self: *GCAllocator) void {
+        const vm = self.vm orelse return;
         var previous: ?*Obj = null;
         var object = vm.objects;
         while (object) |o| {
@@ -188,35 +147,31 @@ pub const GCAllocator = struct {
                     vm.objects = object;
                 }
                 //std.debug.print("CALLED unreached.destroy()\n", .{});
-                gca.bytes_allocated -= @sizeOf(@TypeOf(unreached));
+                self.bytes_allocated -= @sizeOf(@TypeOf(unreached));
                 unreached.destroy(vm);
             }
         }
     }
 
-    pub fn collectGarbage(gca: *GCAllocator) !void {
-        if (gca.is_collecting) return;
-        gca.is_collecting = true;
-        defer gca.is_collecting = false;
-
-        const vm = gca.vm orelse return;
-        const before = gca.bytes_allocated;
+    pub fn collectGarbage(self: *GCAllocator) !void {
+        const vm = self.vm orelse return;
+        const before = self.bytes_allocated;
 
         if (comptime debug.log_gc) std.debug.print("BEFORE {d}\n", .{before});
-        if (comptime debug.log_gc) std.debug.print("BYTES ALLOCATED {d}\n", .{gca.bytes_allocated});
+        if (comptime debug.log_gc) std.debug.print("BYTES ALLOCATED {d}\n", .{self.bytes_allocated});
         if (comptime debug.log_gc) std.debug.print("-- gc begin\n", .{});
 
-        try gca.markRoots();
-        try gca.traceReferences();
+        try self.markRoots();
+        try self.traceReferences();
         vm.globals.removeWhite();
         vm.strings.removeWhite();
-        gca.sweep();
+        self.sweep();
 
-        gca.next_gc = gca.bytes_allocated * GC_HEAP_GROW_FACTOR;
+        self.next_gc = self.bytes_allocated * GC_HEAP_GROW_FACTOR;
 
         if (comptime debug.log_gc) std.debug.print(
             "-- gc end\ncollected {d} bytes (from {d} to {d}) next at {d}\n",
-            .{ before - gca.bytes_allocated, before, gca.bytes_allocated, gca.next_gc },
+            .{ before - self.bytes_allocated, before, self.bytes_allocated, self.next_gc },
         );
     }
 };
