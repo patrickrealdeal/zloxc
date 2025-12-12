@@ -4,6 +4,7 @@ const Value = @import("value.zig").Value;
 const Obj = @import("object.zig");
 const debug = @import("debug.zig");
 const Compiler = @import("compiler.zig").Compiler;
+const Allocator = std.mem.Allocator;
 
 /// Custom Allocator that follows the zig interface
 /// https://github.com/ziglang/zig/blob/master/lib/std/mem/Allocator.zig
@@ -16,7 +17,7 @@ pub const GCAllocator = struct {
     next_gc: usize,
     is_collecting: bool,
 
-    pub fn init(parent_allocator: std.mem.Allocator) GCAllocator {
+    pub fn init(parent_allocator: Allocator) GCAllocator {
         return .{
             .vm = null,
             .parent_allocator = parent_allocator,
@@ -26,7 +27,7 @@ pub const GCAllocator = struct {
         };
     }
 
-    pub fn allocator(gca: *GCAllocator) std.mem.Allocator {
+    pub fn allocator(gca: *GCAllocator) Allocator {
         return .{
             .ptr = gca,
             .vtable = &.{
@@ -48,7 +49,6 @@ pub const GCAllocator = struct {
             gca.bytes_allocated += len;
         }
 
-        //gca.bytes_allocated += len;
         return gca.parent_allocator.rawAlloc(len, ptr_align, ret_address);
     }
 
@@ -70,23 +70,10 @@ pub const GCAllocator = struct {
             }
             return true;
         }
-        std.debug.assert(new_len > buf.len);
         return false;
-        //return gca.parent_allocator.rawResize(buf, buf_align, new_len, ret_address);
     }
 
-    //fn remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
-    //_ = ctx;
-    //_ = memory;
-    //_ = new_len;
-    //_ = alignment;
-    //_ = ret_addr;
-    //return null;
-    //}
-
     fn remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
-        _ = alignment;
-        _ = ret_addr;
         const gca: *GCAllocator = @ptrCast(@alignCast(ctx));
 
         // Calculate the change in memory size.
@@ -98,10 +85,7 @@ pub const GCAllocator = struct {
         }
 
         // Use the parent allocator to perform the remapping.
-        const new_ptr = gca.parent_allocator.realloc(memory, new_len) catch return null orelse {
-            // If realloc fails, return null.
-            return null;
-        };
+        const new_ptr = gca.parent_allocator.rawRemap(memory, alignment, new_len, ret_addr);
 
         // Update the allocated bytes counter.
         if (!gca.is_collecting) {
@@ -112,7 +96,7 @@ pub const GCAllocator = struct {
             }
         }
 
-        return new_ptr.ptr;
+        return new_ptr;
     }
 
     fn free(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, ret_address: usize) void {
@@ -121,8 +105,7 @@ pub const GCAllocator = struct {
         gca.bytes_allocated -= buf.len;
     }
 
-    // Garbage collector implementation
-
+    ///Garbage collector implementation
     fn markCompilerRoots(gca: *GCAllocator) !void {
         const vm = gca.vm orelse return;
         if (vm.parser) |p| {
@@ -154,7 +137,6 @@ pub const GCAllocator = struct {
             upvalue = u.next;
         }
 
-        //try vm.strings.mark(vm);
         try gca.markCompilerRoots();
     }
 
@@ -187,8 +169,7 @@ pub const GCAllocator = struct {
                 } else {
                     vm.objects = object;
                 }
-                //std.debug.print("CALLED unreached.destroy()\n", .{});
-                gca.bytes_allocated -= @sizeOf(@TypeOf(unreached));
+                if (comptime debug.log_gc) std.debug.print("DESTROYNG: {f}\n", .{unreached.asValue()});
                 unreached.destroy(vm);
             }
         }
@@ -202,9 +183,11 @@ pub const GCAllocator = struct {
         const vm = gca.vm orelse return;
         const before = gca.bytes_allocated;
 
-        if (comptime debug.log_gc) std.debug.print("BEFORE {d}\n", .{before});
-        if (comptime debug.log_gc) std.debug.print("BYTES ALLOCATED {d}\n", .{gca.bytes_allocated});
-        if (comptime debug.log_gc) std.debug.print("-- gc begin\n", .{});
+        if (comptime debug.log_gc) {
+            std.debug.print("BEFORE {d}\n", .{before});
+            std.debug.print("BYTES ALLOCATED {d}\n", .{gca.bytes_allocated});
+            std.debug.print("-- gc begin\n", .{});
+        }
 
         try gca.markRoots();
         try gca.traceReferences();
@@ -215,7 +198,7 @@ pub const GCAllocator = struct {
         gca.next_gc = gca.bytes_allocated * GC_HEAP_GROW_FACTOR;
 
         if (comptime debug.log_gc) std.debug.print(
-            "-- gc end\ncollected {d} bytes (from {d} to {d}) next at {d}\n",
+            "-- gc end\ncollected {d:} bytes (from {d:} to {d:}) next at {d}\n",
             .{ before - gca.bytes_allocated, before, gca.bytes_allocated, gca.next_gc },
         );
     }
@@ -229,7 +212,6 @@ test "gc" {
     gc.vm = vm;
     //defer vm.deinit();
 
-    const str = try Obj.String.copy(vm, "hello");
-    _ = str;
+    _ = try Obj.String.copy(vm, "hello");
     try gc.collectGarbage();
 }

@@ -1,0 +1,966 @@
+# callgrind format
+version: 1
+creator: callgrind-3.25.1
+pid: 19126
+cmd:  ./zig-out/bin/zloxc -- loxtests/gc_crash_test.lox
+part: 1
+
+
+desc: I1 cache: 
+desc: D1 cache: 
+desc: LL cache: 
+
+desc: Timerange: Basic block 0 - 875
+desc: Trigger: Program termination
+
+positions: line
+events: Ir
+summary: 6057
+
+
+ob=(1) /home/patrickj/Documents/ziglang/zloxc/zig-out/bin/zloxc
+fl=(25) /home/patrickj/zig-0.15.1/lib/std/debug.zig
+fn=(90) debug.print__anon_3333
+227 10
+fi=(26) /home/patrickj/zig-0.15.1/lib/std/Thread.zig
+1156 2
+fi=(27) /home/patrickj/zig-0.15.1/lib/std/atomic.zig
+74 1
+fi=(9) /home/patrickj/zig-0.15.1/lib/std/Thread/Mutex.zig
++79 1
+fi=(28) /home/patrickj/zig-0.15.1/lib/std/Thread/Mutex/Recursive.zig
+-99 3
+fi=(5) /home/patrickj/zig-0.15.1/lib/std/os/linux/x86_64.zig
+-34 2
+fi=(26)
+1158 2
+fi=(28)
+51 2
++5 1
+fi=(29) /home/patrickj/zig-0.15.1/lib/std/Io/Writer.zig
+310 3
+cfn=(100) Io.Writer.defaultFlush
+calls=1 +4 
+* 20
+* 1
+fi=(31) /home/patrickj/zig-0.15.1/lib/std/Progress.zig
+656 3
+fi=(29)
+519 2
+0 1
+532 3
+-13 3
++2 3
+cfi=(4) /home/patrickj/zig-0.15.1/lib/compiler_rt/memcpy.zig
+cfn=(8) memcpy
+calls=1 37 
+* 22
+* 1
++1 2
++10 4
+1005 7
+cfn=(104) Io.Writer.alignBuffer
+calls=1 -26 
+* 66
+700 2
+519 2
+0 3
+532 3
+-13 3
++2 3
+cfi=(4)
+cfn=(8)
+calls=1 37 
+* 22
+* 1
++1 2
++10 4
+310 3
+cfn=(100)
+calls=1 +4 
+* 103
+* 1
+fi=(31)
+663 3
+fi=(28)
+64 1
++1 1
++1 2
+fi=(27)
+-44 1
+fi=(9)
+205 2
+fe=(25)
++25 8
+
+fl=(11) /home/patrickj/zig-0.15.1/lib/std/heap/PageAllocator.zig
+fn=(26) heap.PageAllocator.map
+24 18
++2 4
+-26 6
+fi=(12) /home/patrickj/zig-0.15.1/lib/std/mem.zig
+33 2
+4452 2
+4579 6
+fe=(11)
+89 6
++1 14
++4 2
+fi=(5)
+-9 18
+fi=(6) /home/patrickj/zig-0.15.1/lib/std/posix.zig
+272 6
+4844 4
+0 4
+fi=(12)
+4005 4
+0 1
+fe=(11)
+103 2
+0 1
+109 1
++1 2
+-1 1
++1 3
+fi=(5)
+-75 3
+fe=(11)
++76 2
++1 4
+0 16
+fi=(12)
+4010 4
++1 2
+fe=(11)
+103 4
++4 2
+0 1
+
+fl=(20) /home/patrickj/Documents/ziglang/zloxc/src/vm.zig
+fn=(58) vm.defineNative
+432 60
++1 20
+cfi=(21) /home/patrickj/Documents/ziglang/zloxc/src/object.zig
+cfn=(60) object.String.copy
+calls=5 126 
+* 2206
+* 20
++1 5
+fi=(14) /home/patrickj/Documents/ziglang/zloxc/src/stack.zig
+29 5
+-2 5
++2 15
++1 20
+fi=(13) /home/patrickj/zig-0.15.1/lib/std/mem/Allocator.zig
+556 10
+157 5
+-28 15
+cfi=(18) /home/patrickj/Documents/ziglang/zloxc/src/memory.zig
+cfn=(46) memory.GCAllocator.alloc
+calls=5 -88 
+* 525
+283 10
+fi=(21)
+28 45
++7 5
+213 5
++1 10
+fe=(20)
+436 5
+fi=(14)
+29 5
+-2 5
++2 15
++1 20
+fe=(20)
+440 10
+325 10
+441 5
+325 20
+441 5
+cfi=(19) /home/patrickj/Documents/ziglang/zloxc/src/table.zig
+cfn=(68) table.Table(*object.String,value.UnionValue).set
+calls=5 41 
+* 321
+* 15
+fi=(14)
+35 25
+-35 35
+fe=(20)
+
+fl=(7) /home/patrickj/zig-0.15.1/lib/std/heap/arena_allocator.zig
+fn=(16) heap.arena_allocator.ArenaAllocator.alloc
+185 228
+fi=(12)
+33 19
+fe=(7)
+185 38
++5 94
++7 36
+-4 1
+0 1
+174 2
++1 3
++1 3
+fi=(13)
+-47 3
+cfi=(8) /home/patrickj/zig-0.15.1/lib/std/heap/SmpAllocator.zig
+cfn=(18) heap.SmpAllocator.alloc
+calls=1 +89 
+* 328
+fe=(7)
++47 2
+0 1
+179 4
+fi=(32) /home/patrickj/zig-0.15.1/lib/std/SinglyLinkedList.zig
+-95 2
++1 1
+fe=(7)
++96 4
+0 2
+195 1
++1 2
++1 2
+fi=(12)
+4452 3
+4579 1
+fe=(7)
+199 2
++1 1
++2 2
+0 36
+195 18
++1 36
++1 36
+fi=(12)
+4452 54
+4579 18
+fe=(7)
+199 36
++1 18
++2 36
+0 8
+195 1
++1 2
++1 2
+0 1
+fi=(12)
+4452 2
+4579 1
+fe=(7)
+199 2
+0 1
+200 1
++2 3
++6 1
++1 2
+fi=(13)
+-74 6
+cfi=(8)
+cfn=(38) heap.SmpAllocator.resize
+calls=1 +83 
+* 36
+fe=(7)
++74 2
+-35 1
++1 3
++1 2
+fi=(13)
+-47 4
+cfi=(8)
+cfn=(18)
+calls=1 +89 
+* 89
+fe=(7)
++47 2
+0 1
+179 4
+fi=(32)
+-95 2
++1 1
+fe=(7)
++96 1
++14 1
+0 2
+203 38
++1 19
++1 19
+0 152
+
+fl=(3) /home/patrickj/zig-0.15.1/lib/compiler_rt/memset.zig
+fn=(6) memset
+12 5
++3 10
++6 20
+-21 8
+21 7
+-21 1
+19 264
++2 34
+-21 4
+19 100
++2 8
++5 10
+
+fl=(30) /home/patrickj/zig-0.15.1/lib/std/fs/File.zig
+fn=(106) fs.File.Writer.drain
+1630 10
++3 2
++60 2
++1 3
+0 1
+1697 3
++7 2
+0 3
+1704 2
++2 2
+0 1
+1743 2
++1 3
+0 5
+fi=(5)
+44 2
+fi=(6)
+272 4
+1369 6
+fe=(30)
+0 1
+fi=(29)
+2301 4
+0 5
+fe=(30)
+0 9
+
+fl=(19)
+fn=(82) table.Table(*object.String,value.UnionValue).Ctx.eql
+21 9
+-21 3
+21 3
+
+fn=(68)
+41 90
+fi=(16) /home/patrickj/zig-0.15.1/lib/std/hash_map.zig
+1295 20
+1146 10
+795 10
++1 20
++2 10
+1148 10
++3 10
+-3 20
++7 40
+0 6
+1156 8
+0 4
+1156 6
+788 2
+1161 6
+cfi=(19)
+cfn=(82)
+calls=2 21 
+* 10
+* 10
++12 4
+-18 2
+0 4
+607 2
+1155 2
+0 6
+1155 2
+0 8
+1177 16
++6 8
+618 8
+787 8
+1186 16
++1 16
++3 8
++2 16
+0 8
+1101 16
++76 4
++6 2
+618 2
+787 2
+1186 4
++1 4
++3 2
++2 4
+0 2
+1101 4
++1 10
+911 20
+fe=(19)
+42 50
+-42 90
+
+fl=(1) /home/patrickj/zig-0.15.1/lib/std/start.zig
+fn=(2) start.posixCallMainAndExit
+460 8
++5 1
++3 2
+-2 1
+0 3
+470 236
++10 3
++1 3
++2 1
+-2 91
++3 1
+-3 85
+0 1
+502 1
+0 2
+fi=(2) /home/patrickj/zig-0.15.1/lib/std/os/linux/tls.zig
+331 2
+0 1
+331 1
++1 2
+0 1
+332 2
+-1 2
++1 12
++5 4
+-6 12
++1 27
++1 2
+-1 11
+0 1
+334 1
+0 1
+343 2
++5 1
+-4 1
++4 1
++1 1
++93 2
++5 3
+-5 1
++5 1
+-34 1
++5 6
++88 3
+0 1
+506 2
+-44 3
+cfi=(3)
+cfn=(6)
+calls=1 12 
+* 46
++3 2
++3 1
++4 1
++1 1
++1 1
++3 4
+cfi=(4)
+cfn=(8)
+calls=1 37 
+* 11
+fi=(5)
+35 4
+fi=(2)
+331 1
+fe=(1)
+546 1
++1 1
+0 1
+547 18
+-1 24
++3 2
+0 2
+fi=(5)
+54 5
+fi=(6)
+272 4
+6964 2
++1 1
+fe=(1)
+556 3
++2 2
+-19 3
+0 1
+581 4
++1 2
+fi=(10) /home/patrickj/zig-0.15.1/lib/std/os/linux.zig
+1872 5
+fi=(5)
+54 5
+fi=(7)
+-32 4
+fi=(15) /home/patrickj/Documents/ziglang/zloxc/src/main.zig
+-15 2
+fi=(18)
++13 1
+fi=(15)
+-9 8
+fi=(18)
++19 2
+fi=(13)
+157 1
+-28 3
+cfi=(7)
+cfn=(16)
+calls=1 +56 
+* 402
+* 1
+283 2
+157 1
+0 1
+fi=(17) /home/patrickj/zig-0.15.1/lib/std/math.zig
+562 2
+fi=(14)
+0 2
+fi=(13)
+129 4
+cfi=(7)
+cfn=(16)
+calls=1 +56 
+* 234
+283 2
+fi=(15)
+0 1
+fi=(20)
+64 6
+fi=(19)
+-38 2
+-26 3
+fi=(16)
+1296 3
+cfn=(42) hash_map.HashMapUnmanaged(*object.String,value.UnionValue,table.Table(*object.String,value.UnionValue).Ctx,75).grow
+calls=1 1428 
+* 203
+fi=(19)
+29 5
+fi=(20)
++36 3
+fi=(19)
+-39 2
+-26 1
+fi=(16)
+1296 4
+cfn=(42)
+calls=1 1428 
+* 203
+fi=(19)
+29 4
+fi=(20)
++37 10
++4 3
+cfi=(3)
+cfn=(6)
+calls=1 -58 
+* 283
+* 4
++8 5
+cfn=(58)
+calls=1 432 
+* 675
+* 2
++1 5
+cfn=(58)
+calls=1 432 
+* 670
+* 2
++1 5
+cfn=(58)
+calls=1 432 
+* 679
+* 2
++1 5
+cfn=(58)
+calls=1 432 
+* 779
+* 2
++1 5
+cfn=(58)
+calls=1 432 
+* 679
+* 2
+fi=(15)
+-64 1
+fi=(23) /home/patrickj/zig-0.15.1/lib/std/process.zig
+588 1
++5 2
++2 2
+fi=(12)
+1115 2
++1 2
++3 1
++1 4
+4452 1
+4579 1
+1124 1
++13 1
+0 2
+1140 1
++1 5
+-1 2
+fi=(24) /home/patrickj/zig-0.15.1/lib/std/simd.zig
+313 2
++1 14
+fi=(12)
+1142 2
+fi=(24)
+0 1
+fi=(30)
+1185 1
+2105 4
+fi=(15)
+25 7
+fi=(30)
+1590 1
+2120 2
+fi=(15)
+26 8
++4 4
+-9 5
++13 1
+cfi=(25)
+cfn=(90)
+calls=1 227 
+* 335
+fe=(1)
+
+fn=(0) (below main)
+232 4
+cfn=(2)
+calls=1 460 
+* 6053
+
+fl=(8)
+fn=(18)
+218 34
+-97 10
+0 2
+222 2
+74 1
++2 2
+fi=(27)
+-2 1
+fe=(8)
++3 1
+-77 1
+133 1
++1 2
+0 7
+123 4
+cfi=(11)
+cfn=(26)
+calls=1 -99 
+* 66
++19 1
++1 2
+fi=(9)
+0 1
+fi=(27)
+22 1
+fi=(9)
+205 2
+fe=(8)
+-45 1
+cfn=(22) heap.SmpAllocator.getCpuCount
+calls=1 -60 
+* 164
+* 1
++2 1
++2 4
++1 2
+fi=(27)
+-91 1
+fe=(8)
++92 1
+0 1
+167 1
+0 1
+133 1
++1 2
++8 1
++1 2
+0 1
+154 3
+cfi=(11)
+cfn=(26)
+calls=1 24 
+* 79
+* 3
++1 3
+fi=(27)
+22 1
+fi=(9)
+205 2
+fe=(8)
+
+fn=(38)
+218 17
+0 1
+218 11
+-38 2
++4 4
+0 1
+
+fn=(22)
+100 1
++1 2
+0 4
+fi=(5)
+44 4
+fi=(10)
+2353 2
++1 8
+cfi=(3)
+cfn=(6)
+calls=1 12 
+* 82
+* 1
+6008 51
+fe=(8)
+102 3
++1 5
+0 1
+
+fl=(18)
+fn=(46)
+41 170
++3 17
+cfn=(48) memory.GCAllocator.collectGarbage
+calls=17 184 
+* 459
+* 34
++3 34
++1 17
++4 34
+fi=(13)
++77 170
+cfi=(7)
+cfn=(16)
+calls=17 +56 
+* 850
+fe=(18)
+
+fn=(48)
+184 136
++1 34
++1 34
++3 51
+0 34
+187 17
+0 153
+
+fl=(16)
+fn=(42)
+1428 16
++2 6
+0 4
+fi=(17)
+562 4
+0 12
+fe=(16)
+1474 6
+fi=(12)
+64 2
+fi=(13)
+245 2
+129 2
+0 2
+129 2
+cfi=(18)
+cfn=(46)
+calls=2 -88 
+* 210
+283 2
+-26 2
+0 6
+fe=(16)
+1481 2
++4 4
++3 6
++2 2
+0 2
+1283 8
+cfi=(3)
+cfn=(6)
+calls=2 12 
+* 60
+1439 6
++2 2
+fi=(12)
+3591 2
+fe=(16)
+1441 2
+fi=(12)
+3592 6
+fe=(16)
+1495 6
+fi=(13)
+0 20
+fe=(16)
+
+fl=(21)
+fn=(60)
+126 50
+fi=(22) /home/patrickj/zig-0.15.1/lib/std/hash/fnv.zig
+25 30
+-25 6
+25 11
+-25 2
+25 2
++1 2
++1 2
+-2 2
++1 2
++1 2
+-2 2
++1 2
++1 2
+-2 2
++1 2
++1 2
++1 2
+-3 22
+-25 4
+25 4
++1 4
++1 4
+-2 18
++1 6
++1 6
+-2 18
+fe=(21)
+128 5
+0 5
+fi=(16)
+966 5
+fi=(19)
+37 30
+fi=(16)
+966 5
+796 8
++2 4
+0 4
+984 4
+0 12
+984 12
+0 4
+985 2
+788 1
+988 4
+cfi=(19)
+cfn=(82)
+calls=1 21 
+* 5
+* 5
++6 2
+-10 1
+0 2
+607 1
+984 1
+fe=(21)
+0 5
+fi=(17)
+562 15
+fe=(21)
+0 5
+fi=(22)
+25 5
+fi=(13)
+278 5
+0 10
+129 20
+cfi=(18)
+cfn=(46)
+calls=5 -88 
+* 525
+0 5
+283 10
+0 10
+fi=(12)
+237 30
+0 8
+237 65
+0 2
+237 22
+fi=(13)
+556 10
+129 20
+cfi=(18)
+cfn=(46)
+calls=5 -88 
+* 525
+283 10
+0 10
+fe=(21)
+28 45
++7 5
++83 15
++1 5
++1 5
+fi=(14)
+-91 5
+-2 5
++2 15
++1 25
+fe=(21)
++91 15
+cfi=(19)
+cfn=(68)
+calls=5 -80 
+* 321
+* 15
+fi=(14)
+-86 15
+fe=(21)
+135 10
++1 15
+0 40
+
+fl=(29)
+fn=(100)
+314 14
++1 4
+0 4
+316 12
+cfi=(30)
+cfn=(106)
+calls=1 1630 
+* 72
+* 3
+0 2
+316 12
+
+fn=(104)
+979 12
++1 2
++1 1
+532 2
+0 2
+532 3
+-13 4
++2 3
+cfi=(4)
+cfn=(8)
+calls=1 37 
+* 23
++1 1
++10 4
+0 9
+
+fl=(4)
+fn=(8)
+37 12
++18 8
++18 6
++1 2
++18 2
++94 3
++2 1
++1 1
+-19 6
+0 1
+186 6
++2 2
++1 2
+-19 16
+0 10
+
+totals: 6057

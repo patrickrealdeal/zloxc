@@ -2,12 +2,15 @@ const std = @import("std");
 const Value = @import("value.zig").Value;
 const String = @import("object.zig").String;
 const VM = @import("vm.zig");
+const debug = @import("debug.zig");
 
 const table_max_load = 75;
 
 pub fn Table(comptime KeyType: type, comptime ValueType: type) type {
     return struct {
-        hm: std.HashMap(KeyType, ValueType, Ctx, table_max_load),
+        hm: std.HashMapUnmanaged(KeyType, ValueType, Ctx, table_max_load),
+        allocator: std.mem.Allocator,
+
         const HT = *@This();
 
         const Ctx = struct {
@@ -21,11 +24,14 @@ pub fn Table(comptime KeyType: type, comptime ValueType: type) type {
         };
 
         pub fn init(allocator: std.mem.Allocator) @This() {
-            return .{ .hm = std.HashMap(KeyType, ValueType, Ctx, table_max_load).init(allocator) };
+            var hm = std.HashMapUnmanaged(KeyType, ValueType, Ctx, table_max_load).empty;
+            hm.ensureTotalCapacity(allocator, 8) catch unreachable;
+
+            return .{ .hm = hm, .allocator = allocator };
         }
 
         pub fn deinit(table: HT) void {
-            table.hm.deinit();
+            table.hm.deinit(table.allocator);
         }
 
         pub fn findString(table: HT, chars: []const u8, hash: u32) ?*String {
@@ -34,13 +40,10 @@ pub fn Table(comptime KeyType: type, comptime ValueType: type) type {
         }
 
         pub fn set(table: HT, key: KeyType, value: ValueType) !bool {
-            return if (table.hm.fetchPut(key, value) catch {
+            return if (table.hm.fetchPut(table.allocator, key, value) catch {
                 std.debug.print("OOME: can't put the key to a table", .{});
                 return VM.VMError.OutOfMemory;
-            }) |_|
-                false // key is not new
-            else
-                true;
+            }) |_| false else true;
         }
 
         pub fn get(table: HT, key: KeyType) ?ValueType {
@@ -54,13 +57,39 @@ pub fn Table(comptime KeyType: type, comptime ValueType: type) type {
         pub fn removeWhite(table: HT) void {
             var it = table.hm.iterator();
             while (it.next()) |kv| {
+                // We check the key, as string tables often have nil values.
                 if (!kv.key_ptr.*.isMarked()) {
-                    std.debug.print("!!!removed: {s}\n", .{kv.key_ptr.*.bytes});
+                    // This removes the entry from the HashMap's internal array,
+                    // but does NOT free the memory for the key or value objects themselves.
                     _ = table.delete(kv.key_ptr.*);
                 }
             }
         }
 
+        //pub fn removeWhite(table: HT) !usize {
+        //var bytes_freed: usize = 0;
+        //
+        //// Pass 1: Collect all unmarked keys.
+        //var keys_to_remove = std.ArrayList(KeyType).empty;
+        //defer keys_to_remove.deinit(table.allocator);
+        //
+        //var it = table.hm.iterator();
+        //while (it.next()) |kv| {
+        //if (!kv.key_ptr.*.isMarked()) {
+        //try keys_to_remove.append(table.allocator, kv.key_ptr.*);
+        //}
+        //}
+        //
+        //// Pass 2: Now it's safe to delete the entries.
+        //for (keys_to_remove.items) |key| {
+        //bytes_freed += key.bytes.len;
+        //if (comptime debug.log_gc) std.debug.print("DELETING: {s}\n", .{key.bytes});
+        //_ = table.delete(key);
+        //}
+        //
+        //return bytes_freed;
+        //}
+        //
         pub fn mark(table: HT, vm: *VM) !void {
             var it = table.hm.iterator();
             while (it.next()) |kv| {

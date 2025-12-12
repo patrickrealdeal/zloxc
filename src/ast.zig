@@ -1,60 +1,34 @@
 const std = @import("std");
 const Token = @import("token.zig");
+const TokenType = @import("token.zig").TokenType;
+const Value = @import("value.zig").Value;
 const Allocator = std.mem.Allocator;
 
-const Tree = struct {
-    root: *Node,
-    allocator: Allocator,
+pub const Node = union(enum) {
+    literal: Value,
+    binary: struct {
+        left: *Node,
+        op: TokenType,
+        right: *Node,
+    },
+    unary: struct {
+        op: TokenType,
+        right: *Node,
+    },
 
-    pub fn init(allocator: Allocator) Tree {
-        return .{
-            .root = undefined,
-            .allocator = allocator,
-        };
-    }
+    // Statements
+    print_statement: *Node, // expr to be printed
+    expression_statement: *Node,
 };
 
-const Node = struct {
-    id: Id,
+pub fn createBinary(allocator: Allocator, left: *Node, op: TokenType, right: *Node) !*Node {
+    const node = try allocator.create(Node);
+    node.* = .{ .binary = .{ .left = left, .op = op, .right = right } };
+    return node;
+}
 
-    pub const Id = enum {
-        root,
-        // Expressions
-        binary_expressio,
-        unary_expression,
-        literal_expression,
-        variable_expression,
-        assign_expression,
-        call_expression,
-        grouping_expression,
-
-        // Statements
-        expression_statement,
-        print_statement,
-        var_decl,
-        if_stmt,
-        while_statement,
-        for_stm,
-        block_statement,
-        fun_decl,
-        return_statement,
-    };
-
-    pub fn Type(comptime id: Id) type {
-        return switch (id) {
-            .root => Root,
-            .literal_expression => LiteralExpression,
-            else => unreachable,
-        };
-    }
-
-    pub const Root = struct {
-        base: Node = .{ .id = .root },
-        body: []*Node,
-    };
-
-    const LiteralExpression = struct {
-        base: Node = .{ .id = .literal_expression },
-        token: Token,
-    };
-};
+pub fn createUnary(allocator: Allocator, op: TokenType, right: *Node) !*Node {
+    const node = try allocator.create(Node);
+    node.* = .{ .unary = .{ .op = op, .right = right } };
+    return node;
+}

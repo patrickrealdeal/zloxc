@@ -53,7 +53,6 @@ inline fn resetStack(vm: *VM) void {
 }
 
 pub fn init(gc_allocator: Allocator) !*VM {
-    std.debug.print("STACK MAX: {d}\n", .{stack_max});
     const static = struct {
         var frames: [frames_max]CallFrame = [1]CallFrame{CallFrame.init()} ** frames_max;
     };
@@ -80,6 +79,7 @@ pub fn init(gc_allocator: Allocator) !*VM {
     try vm.defineNative("sqrt", sqrtNative);
     try vm.defineNative("cos", cosNative);
     try vm.defineNative("sin", sinNative);
+    try vm.defineNative("str", strNative);
     return vm;
 }
 
@@ -215,6 +215,10 @@ fn run(vm: *VM) !void {
                 try vm.callValue(vm.peek(arg_count), arg_count);
                 vm.frame = &vm.frames[vm.frame_count - 1];
             },
+            .class => {
+                const klass = try Obj.Class.allocate(vm, vm.readString());
+                vm.push(Value{ .obj = &klass.obj });
+            },
             .closure => {
                 const func = vm.readConstant().asObj().as(Obj.Function);
                 const closure = try Obj.Closure.allocate(vm, func);
@@ -255,7 +259,7 @@ fn readByte(vm: *VM) u8 {
 }
 
 fn readU16(vm: *VM) u16 {
-    const byte1 = @as(u16, vm.frame.closure.func.chunk.code.items[vm.frame.ip]);
+    const byte1: u16 = vm.frame.closure.func.chunk.code.items[vm.frame.ip];
     const byte2 = vm.frame.closure.func.chunk.code.items[vm.frame.ip + 1];
     vm.frame.ip += 2;
     return (byte1 << 8) | byte2;
@@ -505,6 +509,24 @@ fn sinNative(vm: *VM, arg_count: u8) !Value {
     }
 
     return Value{ .number = @sin(val.number) };
+}
+
+fn strNative(vm: *VM, arg_count: u8) !Value {
+    if (arg_count != 1) {
+        // You could add a runtime error for wrong argument count if you want.
+        return Value.nil; // Or return nil for simplicity.
+    }
+
+    const val = vm.peek(0);
+
+    // Use the VM's allocator to format the value into a new string.
+    const str_bytes = try std.fmt.allocPrint(vm.allocator, "{f}", .{val});
+
+    // Take ownership of the allocated bytes and create a new Obj.String.
+    // This will be managed by the GC.
+    const str_obj = try Obj.String.take(vm, str_bytes);
+
+    return Value{ .obj = &str_obj.obj };
 }
 
 pub const VMError = error{

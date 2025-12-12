@@ -40,6 +40,10 @@ pub fn as(object: *Obj, comptime T: type) *T {
     return @alignCast(@fieldParentPtr("obj", object));
 }
 
+pub fn asValue(object: *Obj) Value {
+    return .{ .obj = object };
+}
+
 pub fn is(object: *Obj, obj_t: ObjType) bool {
     return object.obj_t == obj_t;
 }
@@ -130,7 +134,7 @@ pub const String = struct {
         }
 
         const buffer = try vm.allocator.alloc(u8, bytes.len);
-        std.mem.copyForwards(u8, buffer, bytes);
+        @memcpy(buffer, bytes);
         const str = try allocate(vm, buffer, hash);
         str.owns_bytes = true;
         return str;
@@ -266,14 +270,13 @@ pub const Class = struct {
 
     pub fn allocate(vm: *VM, name: *String) !*Class {
         const class = try Obj.create(vm, Class, .class);
-
         class.name = name;
         return class;
     }
 
-    pub fn mark(object: *String, vm: *VM) !void {
-        try object.mark(vm);
-    }
+    //pub fn mark(object: *String, vm: *VM) !void {
+    //try object.mark(vm);
+    //}
 
     fn destroy(object: *Class, vm: *VM) void {
         vm.allocator.destroy(object);
