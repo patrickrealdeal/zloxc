@@ -98,18 +98,18 @@ pub fn interpret(vm: *VM, source: []const u8) !void {
     defer std.debug.assert(vm.stack.items.len == 0);
 
     if (try compiler.compile(source, vm)) |func| {
-        vm.push(Value{ .obj = &func.obj });
+        vm.push(Value.fromObj(&func.obj));
 
         const closure = try Obj.Closure.allocate(vm, func);
         _ = vm.pop();
-        vm.push(Value{ .obj = &closure.obj });
+        vm.push(Value.fromObj(&closure.obj));
 
         try vm.call(closure, 0);
 
         try vm.run();
         return;
     }
-    return VMError.CompileError;
+    return error.VmCompileError;
 }
 
 fn run(vm: *VM) !void {
@@ -131,23 +131,25 @@ fn run(vm: *VM) !void {
                 vm.push(constant);
             },
             .negate => {
-                if (vm.peek(0) != .number) {
+                if (!Value.isNumber(vm.peek(0))) {
                     try vm.runtimeErr("Operand must be a number!", .{});
                 }
-                vm.stack.items[vm.stack.items.len - 1].number = -vm.stack.items[vm.stack.items.len - 1].number;
+                const val_ptr = &vm.stack.items[vm.stack.items.len - 1];
+                val_ptr.* = Value.fromNumber(-val_ptr.asNumber());
+                //vm.stack.items[vm.stack.items.len - 1].number = -vm.stack.items[vm.stack.items.len - 1].number;
             },
             .add => try vm.binaryOp(.add),
             .sub => try vm.binaryOp(.sub),
             .mul => try vm.binaryOp(.mul),
             .div => try vm.binaryOp(.div),
-            .true => vm.push(Value{ .bool = true }),
-            .false => vm.push(Value{ .bool = false }),
-            .nil => vm.push(Value.nil),
-            .not => vm.push(Value{ .bool = isFalsey(vm.pop()) }),
+            .true => vm.push(Value.fromBool(true)),
+            .false => vm.push(Value.fromBool(false)),
+            .nil => vm.push(Value.fromNil()),
+            .not => vm.push(Value.fromBool(isFalsey(vm.pop()))),
             .equal => {
                 const b = vm.pop();
                 const a = vm.pop();
-                vm.push(Value{ .bool = Value.eq(a, b) });
+                vm.push(Value.fromBool(Value.eq(a, b)));
             },
             .greater => try vm.binaryOp(.gt),
             .less => try vm.binaryOp(.lt),
@@ -166,7 +168,7 @@ fn run(vm: *VM) !void {
                 const value = vm.globals.get(name) orelse {
                     _ = vm.pop();
                     try vm.runtimeErr("Undefined variable {s}.\n", .{name.bytes});
-                    return VMError.UndefinedVariable;
+                    return error.VmUndefinedVariable;
                 };
                 vm.push(value);
             },
@@ -175,7 +177,7 @@ fn run(vm: *VM) !void {
                 if (try vm.globals.set(name, vm.peek(0))) {
                     _ = vm.globals.delete(name);
                     try vm.runtimeErr("Undefined variable {s}.\n", .{name.bytes});
-                    return VMError.UndefinedVariable;
+                    return error.VmUndefinedVariable;
                 }
             },
             .get_local => {
@@ -217,12 +219,12 @@ fn run(vm: *VM) !void {
             },
             .class => {
                 const klass = try Obj.Class.allocate(vm, vm.readString());
-                vm.push(Value{ .obj = &klass.obj });
+                vm.push(Value.fromObj(&klass.obj));
             },
             .closure => {
                 const func = vm.readConstant().asObj().as(Obj.Function);
                 const closure = try Obj.Closure.allocate(vm, func);
-                vm.push(Value{ .obj = &closure.obj });
+                vm.push(Value.fromObj(&closure.obj));
 
                 for (closure.upvalues) |*upvalue| {
                     const is_local = vm.readByte() != 0;
@@ -286,11 +288,12 @@ fn stackTop(vm: *VM) !usize {
 }
 
 fn isFalsey(value: Value) bool {
-    return switch (value) {
-        .nil => true,
-        .bool => |b| !b,
-        else => false,
-    };
+    //return switch (value) {
+    //.nil => true,
+    //.bool => |b| !b,
+    //else => false,
+    //};
+    return value.isFalsey();
 }
 
 fn concat(vm: *VM) !void {
@@ -298,30 +301,36 @@ fn concat(vm: *VM) !void {
     const a = vm.pop().asObj().as(Obj.String);
     const res = try std.mem.concat(vm.allocator, u8, &[_][]const u8{ a.bytes, b.bytes });
     const str = try Obj.String.take(vm, res);
-    vm.push(Value{ .obj = &str.obj });
+    vm.push(Value.fromObj(&str.obj));
 }
 
 const BinaryOp = enum { add, sub, mul, div, gt, lt };
 
 fn binaryOp(vm: *VM, op: BinaryOp) !void {
-    if (vm.peek(0).is(.string) and vm.peek(1).is(.string)) {
+    const b = vm.peek(0);
+    const a = vm.peek(1);
+
+    if (op == .add and a.isObj() and a.asObj().obj_t == .string and b.isObj() and b.asObj().obj_t == .string) {
         try vm.concat();
-    } else if (vm.peek(0).isNumber() and vm.peek(1).isNumber()) {
-        const b = vm.pop().number;
-        const a = vm.pop().number;
+    } else if (a.isNumber() and b.isNumber()) {
+        const left = a.asNumber();
+        const right = b.asNumber();
+        _ = vm.pop();
+        _ = vm.pop();
+
         const result = switch (op) {
-            .add => Value{ .number = a + b },
-            .sub => Value{ .number = a - b },
-            .mul => Value{ .number = a * b },
-            .div => Value{ .number = a / b },
-            .gt => Value{ .bool = a > b },
-            .lt => Value{ .bool = a < b },
+            .add => Value.fromNumber(left + right),
+            .sub => Value.fromNumber(left - right),
+            .mul => Value.fromNumber(left * right),
+            .div => Value.fromNumber(left / right),
+            .gt => Value.fromBool(left > right),
+            .lt => Value.fromBool(left < right),
         };
 
         vm.push(result);
     } else {
-        try vm.runtimeErr("Operands must be two numbers or strings {f} {f}", .{ vm.peek(0), vm.peek(1) });
-        return VMError.RuntimeError;
+        try vm.runtimeErr("Operands must be two numbers or strings [{f},  {f}]", .{ vm.peek(0), vm.peek(1) });
+        return error.VmRuntimeError;
     }
 }
 
@@ -347,21 +356,19 @@ fn call(vm: *VM, closure: *Obj.Closure, arg_count: usize) !void {
 }
 
 fn callValue(vm: *VM, callee: Value, arg_count: usize) !void {
-    switch (callee) {
-        .obj => |obj| {
-            switch (obj.obj_t) {
-                .native => {
-                    const native = obj.as(Obj.Native).func;
-                    const result = try native(vm, @truncate(arg_count));
-                    vm.stack.items.len -= arg_count + 1;
-                    vm.push(result);
-                },
-                .closure => return vm.call(obj.as(Obj.Closure), arg_count),
-                else => try vm.runtimeErr("Can only call functions.", .{}),
-            }
-        },
-        else => try vm.runtimeErr("Can only call functions.", .{}),
-    }
+    if (callee.isObj()) {
+        const obj = callee.asObj();
+        switch (obj.obj_t) {
+            .native => {
+                const native = obj.as(Obj.Native).func;
+                const result = try native(vm, @truncate(arg_count));
+                vm.stack.items.len -= arg_count + 1;
+                vm.push(result);
+            },
+            .closure => return vm.call(obj.as(Obj.Closure), arg_count),
+            else => try vm.runtimeErr("Can only call functions.", .{}),
+        }
+    } else try vm.runtimeErr("Can only call functions.", .{});
 }
 
 fn captureUpvalue(vm: *VM, local: *Value) !*Obj.Upvalue {
@@ -429,15 +436,13 @@ fn runtimeErr(vm: *VM, comptime fmt: []const u8, args: anytype) !void {
         _ = vm.pop();
         try err_writer.flush();
     }
-
-    //return VMError.RuntimeError;
 }
 
 fn defineNative(vm: *VM, name: []const u8, func: NativeFn) !void {
     const str = try Obj.String.copy(vm, name);
-    vm.push(Value{ .obj = &str.obj }); // push on the stack to avoid GCAllocator
+    vm.push(Value.fromObj(&str.obj)); // push on the stack to avoid GCAllocator
     const native = try Obj.Native.allocate(vm, func, name);
-    const native_val: Value = .{ .obj = &native.obj };
+    const native_val: Value = Value.fromObj(&native.obj);
     vm.push(native_val);
 
     //try str.obj.mark(vm);
@@ -471,50 +476,47 @@ fn clockNative(vm: *VM, arg_count: u8) !Value {
     const mills = std.time.milliTimestamp();
     const seconds = @as(f64, @floatFromInt(mills)) / @as(f64, @floatFromInt(std.time.ms_per_s));
 
-    return Value{ .number = seconds };
+    return Value.fromNumber(seconds);
 }
 
 fn sqrtNative(vm: *VM, arg_count: u8) !Value {
     _ = arg_count;
-    //var stderr = std.fs.File.stderr().writer(&.{});
-    //const err_writer = &stderr.interface;
 
     const val = vm.peek(0);
-    if (!val.is(.number)) {
+    if (!Value.isNumber(val)) {
         try vm.runtimeErr("ERROR: sqrt parameter must be a number!\n", .{});
-        return VMError.RuntimeError;
+        return error.VmRuntimeError;
     }
 
     // sqrt in place to avoid pop and push codes
-    return Value{ .number = @sqrt(val.number) };
+    return Value.fromNumber(@sqrt(val.asNumber()));
 }
 
 fn cosNative(vm: *VM, arg_count: u8) !Value {
     _ = arg_count;
     const val = vm.peek(0);
-    if (!val.is(.number)) {
+    if (!Value.isNumber(val)) {
         try vm.runtimeErr("ERROR: cos parameter must be a number!\n", .{});
-        return VMError.RuntimeError;
+        return error.VmRuntimeError;
     }
 
-    return Value{ .number = @cos(val.number) };
+    return Value.fromNumber(@cos(val.asNumber()));
 }
 
 fn sinNative(vm: *VM, arg_count: u8) !Value {
     _ = arg_count;
     const val = vm.peek(0);
-    if (!val.is(.number)) {
+    if (!Value.isNumber(val)) {
         try vm.runtimeErr("ERROR: cos parameter must be a number!\n", .{});
-        return VMError.RuntimeError;
+        return error.VmRuntimeError;
     }
 
-    return Value{ .number = @sin(val.number) };
+    return Value.fromNumber(@sin(val.asNumber()));
 }
 
 fn strNative(vm: *VM, arg_count: u8) !Value {
     if (arg_count != 1) {
-        // You could add a runtime error for wrong argument count if you want.
-        return Value.nil; // Or return nil for simplicity.
+        return error.WrongArgumentCount;
     }
 
     const val = vm.peek(0);
@@ -526,13 +528,5 @@ fn strNative(vm: *VM, arg_count: u8) !Value {
     // This will be managed by the GC.
     const str_obj = try Obj.String.take(vm, str_bytes);
 
-    return Value{ .obj = &str_obj.obj };
+    return Value.fromObj(&str_obj.obj);
 }
-
-pub const VMError = error{
-    Ok,
-    CompileError,
-    UndefinedVariable,
-    RuntimeError,
-    OutOfMemory,
-};

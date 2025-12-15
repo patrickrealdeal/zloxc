@@ -10,6 +10,7 @@ const TokenType = Token.TokenType;
 const OpCode = Chunk.OpCode;
 const ast = @import("ast.zig");
 const Node = @import("ast.zig").Node;
+const codegen = @import("codegen.zig");
 
 const u8_max = std.math.maxInt(u8);
 const CompilerError = error{ CompilerError, TooManyLocalVariables, VarAlreadyDeclared };
@@ -96,8 +97,32 @@ pub fn compile(source: []const u8, vm: *VM) !?*Obj.Function {
     defer vm.parser = null;
     try parser.advance();
 
+    var statements: std.ArrayList(*Node) = .empty;
+    defer statements.deinit(parser.allocator);
+
+    const stack_before = vm.stack.items.len;
+
     while (!try parser.match(.eof)) {
-        try parser.declaration();
+        const stmt = try parser.declaration();
+        try statements.append(parser.allocator, stmt);
+    }
+
+    if (debug.print_ast) {
+        std.debug.print("\n=== AST ===\n", .{});
+        for (statements.items) |stmt| {
+            ast.printAst(stmt, 0);
+        }
+        std.debug.print("===========\n\n", .{});
+    }
+
+    for (statements.items) |stmt| {
+        try codegen.emitFromAst(&parser, stmt);
+    }
+
+    const stack_after = vm.stack.items.len;
+    var i: usize = stack_after;
+    while (i > stack_before) : (i -= 1) {
+        _ = vm.pop();
     }
 
     const func = parser.endCompiler();
@@ -262,64 +287,48 @@ pub const Parser = struct {
         parser.emitBytes(@intFromEnum(OpCode.define_global), global);
     }
 
-    fn argumentList(parser: *Parser) !u8 {
-        var arg_count: u8 = 0;
-        if (!parser.check(.right_paren)) {
-            while (true) {
-                // TODO: Fix this return value
-                _ = try parser.expression();
-
-                if (arg_count == 255) {
-                    parser.err("Can't have more than 255 arguments.");
-                    break;
-                }
-
-                arg_count += 1;
-                if (!try parser.match(.comma)) break;
-            }
-        }
-
-        try parser.consume(.right_paren, "Expect ')' after arguments.");
-        return arg_count;
-    }
-
     fn and_(parser: *Parser, can_assign: bool, left_node: ?*Node) !*Node {
         _ = can_assign;
-        _ = left_node;
-        const end_jump = parser.emitJump(@intFromEnum(OpCode.jump_if_false));
+        const left = left_node orelse unreachable;
 
-        parser.emitByte(@intFromEnum(OpCode.pop));
-        // TODO: To be fixed
-        const temp_node = try parser.parsePrecedence(.prec_and);
+        const right = try parser.parsePrecedence(.prec_and);
 
-        parser.patchJump(end_jump);
-
-        return temp_node;
+        const node = try parser.allocator.create(Node);
+        node.* = .{
+            .logical = .{
+                .left = left,
+                .op = .@"and",
+                .right = right,
+            },
+        };
+        return node;
     }
 
     fn or_(parser: *Parser, can_assign: bool, left_node: ?*Node) !*Node {
         _ = can_assign;
-        _ = left_node;
-        const else_jump = parser.emitJump(@intFromEnum(OpCode.jump_if_false));
-        const end_jump = parser.emitJump(@intFromEnum(OpCode.jump));
+        const left = left_node orelse unreachable;
 
-        parser.patchJump(else_jump);
-        parser.emitByte(@intFromEnum(OpCode.pop));
+        const right = try parser.parsePrecedence(.prec_or);
 
-        const temp_node = try parser.parsePrecedence(.prec_or);
-        parser.patchJump(end_jump);
-
-        return temp_node;
+        const node = try parser.allocator.create(Node);
+        node.* = .{
+            .logical = .{
+                .left = left,
+                .op = .@"or",
+                .right = right,
+            },
+        };
+        return node;
     }
 
-    fn markInitialized(parser: *Parser) void {
+    pub fn markInitialized(parser: *Parser) void {
         if (parser.compiler.scope_depth == 0) return;
         parser.compiler.locals[parser.compiler.local_count - 1].depth = parser.compiler.scope_depth;
     }
 
-    fn identifierConstant(parser: *Parser, name: Token) !u8 {
+    pub fn identifierConstant(parser: *Parser, name: Token) !u8 {
         const str = try Obj.String.copy(parser.vm, name.lexeme);
-        return try parser.makeConstant(Value{ .obj = &str.obj });
+        return try parser.makeConstant(Value.fromObj(&str.obj));
     }
 
     fn declareVariable(parser: *Parser) !void {
@@ -343,42 +352,6 @@ pub const Parser = struct {
 
     fn expression(parser: *Parser) !*Node {
         return try parser.parsePrecedence(.prec_assignment);
-    }
-    //const ast_node = try parser.exprToAst(.prec_assignment);
-    //
-    //try parser.emitFromAst(ast_node);
-    //
-    //return ast_node;
-    ////try parser.parsePrecedence(.prec_assignment);
-    //}
-
-    fn ast_binary(parser: *Parser, precedence: Precedence) !*Node {
-        try parser.advance();
-
-        if (parser.previous.ttype == .number) {
-            const n = try std.fmt.parseFloat(f64, parser.previous.lexeme);
-            const value: Value = .{ .number = n };
-            const node = try parser.allocator.create(Node);
-            node.* = .{ .literal = value };
-
-            if (@intFromEnum(getRule(parser.current.ttype).precedence) >= @intFromEnum(precedence)) {
-                try parser.advance();
-                const op = parser.previous.ttype;
-                const right = try parser.ast_binary(getRule(op).precedence);
-                const bin_node = try parser.allocator.create(Node);
-                bin_node.* = .{
-                    .binary = .{
-                        .left = node,
-                        .op = op,
-                        .right = right,
-                    },
-                };
-                return bin_node;
-
-                //return try ast.createBinary(parser.allocator, node, op, right);
-            }
-            return node;
-        }
     }
 
     fn exprToAst(parser: *Parser, precedence: Precedence) !*Node {
@@ -418,97 +391,118 @@ pub const Parser = struct {
         return error.NotImplemented;
     }
 
-    fn emitFromAst(parser: *Parser, node: *Node) !void {
-        std.debug.print("emitting from AST: {}\n", .{node});
-        switch (node.*) {
-            .literal => |val| {
-                try parser.emitConstant(val);
-            },
-            .binary => |bin| {
-                try parser.emitFromAst(bin.left);
-                try parser.emitFromAst(bin.right);
+    pub fn emitVariableGet(parser: *Parser, name: Token) !void {
+        var get_op: OpCode = undefined;
+        var arg: u8 = undefined;
 
-                switch (bin.op) {
-                    .plus => parser.emitByte(@intFromEnum(OpCode.add)),
-                    .minus => parser.emitByte(@intFromEnum(OpCode.sub)),
-                    .star => parser.emitByte(@intFromEnum(OpCode.mul)),
-                    .slash => parser.emitByte(@intFromEnum(OpCode.div)),
-                    else => unreachable,
-                }
-            },
-            .unary => |un| {
-                try parser.emitFromAst(un.right);
-
-                switch (un.op) {
-                    .minus => parser.emitByte(@intFromEnum(OpCode.negate)),
-                    .bang => parser.emitByte(@intFromEnum(OpCode.not)),
-                    else => unreachable,
-                }
-            },
-            .print_statement => |value| {
-                try parser.emitFromAst(value);
-
-                parser.emitByte(@intFromEnum(OpCode.print));
-            },
-            .expression_statement => |expr| {
-                try parser.emitFromAst(expr);
-                parser.emitByte(@intFromEnum(OpCode.pop));
-            },
+        if (parser.resolveLocal(parser.compiler, name)) |local| {
+            arg = local;
+            get_op = .get_local;
+        } else if (try parser.resolveUpvalue(parser.compiler, name)) |upvalue| {
+            arg = upvalue;
+            get_op = .get_upvalue;
+        } else {
+            arg = try parser.identifierConstant(name);
+            get_op = .get_global;
         }
+
+        parser.emitBytes(@intCast(@intFromEnum(get_op)), arg);
+    }
+
+    pub fn emitVariableSet(parser: *Parser, name: Token) !void {
+        var set_op: OpCode = undefined;
+        var arg: u8 = undefined;
+
+        if (parser.resolveLocal(parser.compiler, name)) |local| {
+            arg = local;
+            set_op = .set_local;
+        } else if (try parser.resolveUpvalue(parser.compiler, name)) |upvalue| {
+            arg = upvalue;
+            set_op = .set_upvalue;
+        } else {
+            arg = try parser.identifierConstant(name);
+            set_op = .set_global;
+        }
+
+        parser.emitBytes(@intCast(@intFromEnum(set_op)), arg);
     }
 
     fn block(parser: *Parser) !void {
         while (!parser.check(.right_brace) and !parser.check(.eof)) {
-            try parser.declaration();
+            _ = try parser.declaration();
         }
 
         try parser.consume(.right_brace, "Expect '}' after block.");
     }
 
-    fn function(parser: *Parser, fun_t: FunctionType) !void {
-        var compiler: Compiler = try .init(parser.vm, fun_t, parser.compiler);
-        defer compiler.deinit();
-        parser.compiler = &compiler;
-        parser.compiler.func.name = try Obj.String.copy(parser.vm, parser.previous.lexeme);
-        parser.beginScope();
+    fn blockStatement(parser: *Parser) !*Node {
+        var statements: std.ArrayList(*Node) = .empty;
+
+        while (!parser.check(.right_brace) and !parser.check(.eof)) {
+            const stmt = try parser.declaration();
+            try statements.append(parser.allocator, stmt);
+        }
+
+        try parser.consume(.right_brace, "Expect '}' after block.");
+
+        const node = try parser.allocator.create(Node);
+
+        const owned_slice = try statements.toOwnedSlice(parser.allocator);
+        node.* = .{ .block = .{ .statements = owned_slice } };
+        return node;
+    }
+
+    fn funDeclaration(parser: *Parser) !*Node {
+        try parser.consume(.identifier, "Expect function name.");
+        const name = parser.previous.lexeme;
+
+        // Declare the function name in current scope
+        try parser.declareVariable();
+
+        // Calculate global index if at global scope
+        var global_index: ?u8 = null;
+        if (parser.compiler.scope_depth == 0) {
+            global_index = try parser.identifierConstant(parser.previous);
+        } else {
+            parser.markInitialized();
+        }
 
         try parser.consume(.left_paren, "Expect '(' after function name.");
 
-        // Function parameters
+        // Parse parameters
+        var params: std.ArrayList([]const u8) = .empty;
         if (!parser.check(.right_paren)) {
             while (true) {
-                if (parser.compiler.func.arity == 255) {
-                    parser.errorAtCurrent("Can't have more than 255 parameters.");
+                if (params.items.len >= 255) {
+                    parser.err("Can't have more than 255 parameters.");
                     break;
                 }
+                try parser.consume(.identifier, "Expect parameter name.");
+                try params.append(parser.allocator, parser.previous.lexeme);
 
-                parser.compiler.func.arity += 1;
-                const constant = try parser.parseVariable("Expect parameter name.");
-                try parser.defineVariable(constant);
                 if (!try parser.match(.comma)) break;
             }
         }
+        try parser.consume(.right_paren, "Expect ')' after parameters.");
 
-        try parser.consume(.right_paren, "Expect ')' after function name.");
+        // Parse body
+        try parser.consume(.left_brace, "Expect '{' before function body.");
+        const body = try parser.blockStatement();
 
-        // Body
-        try parser.consume(.left_brace, "Expect '{' after function name.");
-        try parser.block();
+        const params_slice = try params.toOwnedSlice(parser.allocator);
+        const node = try parser.allocator.create(Node);
+        node.* = .{
+            .function_declaration = .{
+                .name = name,
+                .params = params_slice,
+                .body = body,
+                .arity = @intCast(params_slice.len),
+                .global_index = global_index,
+                //.mark_init = parser.compiler.scope_depth > 0,
+            },
+        };
 
-        const func = parser.endCompiler();
-        parser.emitBytes(@intFromEnum(OpCode.closure), try parser.makeConstant(Value{ .obj = &func.obj }));
-
-        for (compiler.upvalues.items) |upvalue| {
-            parser.emitByte(if (upvalue.source == .local) 1 else 0);
-            parser.emitByte(upvalue.index);
-        }
-    }
-
-    fn funDeclaration(parser: *Parser) !void {
-        const global = try parser.parseVariable("Expect function name.");
-        parser.markInitialized();
-        try parser.function(.function);
-        try parser.defineVariable(global);
+        return node;
     }
 
     fn classDeclaration(parser: *Parser) !void {
@@ -523,56 +517,72 @@ pub const Parser = struct {
         try parser.consume(.right_brace, "Expect '}' after class body.");
     }
 
-    fn varDeclaration(parser: *Parser) !void {
-        const global = try parser.parseVariable("Expected variable name.");
+    fn varDeclaration(parser: *Parser) !*Node {
+        try parser.consume(.identifier, "Expected variable name.");
+        const name = parser.previous.lexeme;
 
+        try parser.declareVariable();
+
+        var initializer: ?*Node = null;
         if (try parser.match(.equal)) {
-            // TODO: FIX signature
-            _ = try parser.expression();
-        } else {
-            parser.emitByte(@intFromEnum(OpCode.nil));
+            initializer = try parser.expression();
         }
 
-        try parser.consume(.semicolon, "Expected ';' after variable declaration,");
-        try parser.defineVariable(global);
+        try parser.consume(.semicolon, "Expected ';'");
+
+        if (parser.compiler.scope_depth > 0) {
+            parser.markInitialized();
+        }
+
+        const node = try parser.allocator.create(Node);
+        node.* = .{
+            .var_declaration = .{
+                .name = name,
+                .initializer = initializer,
+                .global_index = null,
+            },
+        };
+        return node;
     }
 
-    fn declaration(parser: *Parser) anyerror!void {
+    fn declaration(parser: *Parser) anyerror!*Node {
         if (try parser.match(.@"var")) {
-            try parser.varDeclaration();
+            return try parser.varDeclaration();
         } else if (try parser.match(.class)) {
             try parser.classDeclaration();
+            const node = try parser.allocator.create(Node);
+            node.* = .{ .literal = Value.fromNil() };
+            return node;
         } else if (try parser.match(.fun)) {
-            try parser.funDeclaration();
+            return try parser.funDeclaration();
         } else {
-            try parser.statement();
+            return try parser.statement();
         }
 
         if (parser.panic_mode) try parser.synchronize();
     }
 
-    fn statement(parser: *Parser) !void {
-        var statement_node: *Node = undefined;
+    fn statement(parser: *Parser) anyerror!*Node {
+        //var statement_node: *Node = undefined;
 
         if (try parser.match(.print)) {
-            statement_node = try parser.printStatement();
+            return try parser.printStatement();
         } else if (try parser.match(.@"if")) {
-            try parser.ifStatement();
+            return try parser.ifStatement();
         } else if (try parser.match(.@"return")) {
-            try parser.retStatement();
+            return try parser.retStatement();
         } else if (try parser.match(.@"while")) {
-            try parser.whileStatement();
+            return try parser.whileStatement();
         } else if (try parser.match(.@"for")) {
-            try parser.forStatement();
+            return try parser.forStatement();
         } else if (try parser.match(.left_brace)) {
-            parser.beginScope();
-            try parser.block();
-            parser.endScope();
+            const block_node = try parser.blockStatement();
+            return block_node;
         } else {
-            statement_node = try parser.expressionStatement();
+            return try parser.expressionStatement();
         }
 
-        try parser.emitFromAst(statement_node);
+        //try parser.emitFromAst(statement_node);
     }
 
     fn expressionStatement(parser: *Parser) !*Node {
@@ -585,93 +595,83 @@ pub const Parser = struct {
         //parser.emitByte(@intFromEnum(OpCode.pop));
     }
 
-    fn ifStatement(parser: *Parser) anyerror!void {
-        try parser.consume(.left_paren, "Expected '(' after 'if'.");
-        // TODO: FIX
-        _ = try parser.expression();
-        try parser.consume(.right_paren, "Expected ')' after condition.");
+    fn ifStatement(parser: *Parser) !*Node {
+        try parser.consume(.left_paren, "Expect '(' after 'if'.");
+        const condition = try parser.expression();
+        try parser.consume(.right_paren, "Expect ')' after condition.");
 
-        const then_jump = parser.emitJump(@intFromEnum(OpCode.jump_if_false));
-        parser.emitByte(@intFromEnum(OpCode.pop));
-        try parser.statement();
+        const then_branch = try parser.statement();
 
-        const elseJump = parser.emitJump(@intFromEnum(OpCode.jump));
-        parser.patchJump(then_jump);
-        parser.emitByte(@intFromEnum(OpCode.pop));
-
+        var else_branch: ?*Node = null;
         if (try parser.match(.@"else")) {
-            try parser.statement();
+            else_branch = try parser.statement();
         }
 
-        parser.patchJump(elseJump);
+        const node = try parser.allocator.create(Node);
+        node.* = .{ .if_statement = .{
+            .condition = condition,
+            .then_branch = then_branch,
+            .else_branch = else_branch,
+        } };
+        return node;
     }
 
-    fn whileStatement(parser: *Parser) anyerror!void {
-        const loop_start = parser.currentChunk().code.items.len;
-        try parser.consume(.left_paren, "Expected '(' after 'while'.");
-        // TODO: FIX
-        _ = try parser.expression();
-        try parser.consume(.right_paren, "Expected ')' after condition.");
+    fn whileStatement(parser: *Parser) anyerror!*Node {
+        try parser.consume(.left_paren, "Expect '(' after 'while'.");
+        const condition = try parser.expression();
+        try parser.consume(.right_paren, "Expect ')' after condition.");
 
-        const exit_jump = parser.emitJump(@intFromEnum(OpCode.jump_if_false));
-        parser.emitByte(@intFromEnum(OpCode.pop));
-        try parser.statement();
-        parser.emitLoop(loop_start);
+        const body = try parser.statement();
 
-        parser.patchJump(exit_jump);
-        parser.emitByte(@intFromEnum(OpCode.pop));
+        const node = try parser.allocator.create(Node);
+        node.* = .{ .while_statement = .{
+            .condition = condition,
+            .body = body,
+        } };
+        return node;
     }
 
-    fn forStatement(parser: *Parser) anyerror!void {
-        parser.beginScope();
+    fn forStatement(parser: *Parser) !*Node {
+        parser.beginScope(); // For loop variables are scoped
 
-        try parser.consume(.left_paren, "Expected '(' after 'for'.");
+        try parser.consume(.left_paren, "Expect '(' after 'for'.");
+
+        // Initializer
+        var initializer: ?*Node = null;
         if (try parser.match(.semicolon)) {
-            // no initializer
+            // No initializer
         } else if (try parser.match(.@"var")) {
-            try parser.varDeclaration();
+            initializer = try parser.varDeclaration();
         } else {
-            // TODO: FIX
-            _ = try parser.expressionStatement();
+            initializer = try parser.expressionStatement();
         }
 
-        var loop_start = parser.currentChunk().code.items.len;
-
-        // condition clause
-        var exit_jump: ?usize = null;
-        if (!try parser.match(.semicolon)) {
-            // TODO: FIX
-            _ = try parser.expression();
-            try parser.consume(.semicolon, "Expected ';' after loop condition.");
-
-            // jump out of loop if condition is false
-            exit_jump = parser.emitJump(@intFromEnum(OpCode.jump_if_false));
-            parser.emitByte(@intFromEnum(OpCode.pop)); // Condition
+        // Condition
+        var condition: ?*Node = null;
+        if (!parser.check(.semicolon)) {
+            condition = try parser.expression();
         }
+        try parser.consume(.semicolon, "Expect ';' after loop condition.");
 
-        // Increment Clause
-        if (!try parser.match(.right_paren)) {
-            const body_jump = parser.emitJump(@intFromEnum(OpCode.jump));
-            const increment_start = parser.currentChunk().code.items.len;
-            // TODO: FIX
-            _ = try parser.expression();
-            parser.emitByte(@intFromEnum(OpCode.pop));
-            try parser.consume(.right_paren, "Expect ')' after for loop clauses.");
-
-            parser.emitLoop(loop_start);
-            loop_start = increment_start;
-            parser.patchJump(body_jump);
+        // Increment
+        var increment: ?*Node = null;
+        if (!parser.check(.right_paren)) {
+            increment = try parser.expression();
         }
+        try parser.consume(.right_paren, "Expect ')' after for clauses.");
 
-        try parser.statement();
-        parser.emitLoop(loop_start);
-
-        if (exit_jump) |jump| {
-            parser.patchJump(jump);
-            parser.emitByte(@intFromEnum(OpCode.pop)); // Condition
-        }
+        const body = try parser.statement();
 
         parser.endScope();
+
+        const node = try parser.allocator.create(Node);
+        node.* = .{ .for_statement = .{
+            .initializer = initializer,
+            .condition = condition,
+            .increment = increment,
+            .body = body,
+        } };
+        return node;
     }
 
     fn printStatement(parser: *Parser) !*Node {
@@ -685,19 +685,16 @@ pub const Parser = struct {
         //parser.emitByte(@intFromEnum(OpCode.print));
     }
 
-    fn retStatement(parser: *Parser) !void {
-        if (parser.compiler.func_t == .script) {
-            parser.err("Can't return from top-level code.");
+    fn retStatement(parser: *Parser) !*Node {
+        var value: ?*Node = null;
+        if (!try parser.match(.semicolon)) {
+            value = try parser.expression();
+            try parser.consume(.semicolon, "Expect ';' after return value.");
         }
 
-        if (try parser.match(.semicolon)) {
-            parser.emitReturn();
-        } else {
-            // TODO:FIX
-            _ = try parser.expression();
-            try parser.consume(.semicolon, "Expect ';' after value.");
-            parser.emitByte(@intFromEnum(OpCode.ret));
-        }
+        const node = try parser.allocator.create(Node);
+        node.* = .{ .ret_statement = .{ .value = value } };
+        return node;
     }
 
     fn synchronize(parser: *Parser) !void {
@@ -727,7 +724,7 @@ pub const Parser = struct {
         // try parser.emitConstant(Value{ .number = value });
         const node = try parser.allocator.create(Node);
         node.* = .{
-            .literal = .{ .number = value },
+            .literal = Value.fromNumber(value),
         };
         return node;
     }
@@ -745,7 +742,6 @@ pub const Parser = struct {
     fn grouping(parser: *Parser, can_assign: bool, left_node: ?*Node) !*Node {
         _ = can_assign;
         _ = left_node;
-        // TODO: FIX
         const inner_expr_node = try parser.expression();
         try parser.consume(.right_paren, "expected ')' after expression");
         return inner_expr_node;
@@ -753,56 +749,53 @@ pub const Parser = struct {
 
     fn string(parser: *Parser, can_assign: bool, left_node: ?*Node) !*Node {
         _ = can_assign;
+        _ = left_node;
+
         const bytes_len = parser.previous.lexeme.len;
-        // discards '""'
         const str = try Obj.String.copy(parser.vm, parser.previous.lexeme[1 .. bytes_len - 1]);
-        try parser.emitConstant(Value{ .obj = &str.obj });
-        return left_node.?; //TODO : FIX
+
+        // Push to VM stack to protect from GC during parsing/emission
+        parser.vm.push(Value.fromObj(&str.obj));
+
+        const node = try parser.allocator.create(Node);
+        node.* = .{ .literal = Value.fromObj(&str.obj) };
+        return node;
     }
 
     fn literal(parser: *Parser, can_assign: bool, left_node: ?*Node) !*Node {
         _ = can_assign;
-        switch (parser.previous.ttype) {
-            .false => parser.emitByte(@intFromEnum(OpCode.false)),
-            .true => parser.emitByte(@intFromEnum(OpCode.true)),
-            .nil => parser.emitByte(@intFromEnum(OpCode.nil)),
-            else => unreachable,
-        }
+        _ = left_node;
 
-        return left_node.?; //TODO: FIX
+        const value: Value = switch (parser.previous.ttype) {
+            .false => Value.fromBool(false),
+            .true => Value.fromBool(true),
+            .nil => Value.fromNil(),
+            else => unreachable,
+        };
+
+        const node = try parser.allocator.create(Node);
+        node.* = .{
+            .literal = value,
+        };
+        return node;
     }
 
     fn variable(parser: *Parser, can_assign: bool, left_node: ?*Node) !*Node {
-        try parser.namedVariable(parser.previous, can_assign);
-        return left_node.?; //TODO :FIX
-    }
+        _ = left_node;
 
-    fn namedVariable(parser: *Parser, name: Token, can_assign: bool) !void {
-        var get_op: ?OpCode = null;
-        var set_op: ?OpCode = null;
-        var arg: u8 = undefined;
-
-        if (parser.resolveLocal(parser.compiler, name)) |local| {
-            arg = local;
-            get_op = .get_local;
-            set_op = .set_local;
-        } else if (try parser.resolveUpvalue(parser.compiler, name)) |upvalue| {
-            arg = upvalue;
-            get_op = .get_upvalue;
-            set_op = .set_upvalue;
-        } else {
-            arg = try parser.identifierConstant(name);
-            get_op = .get_global;
-            set_op = .set_global;
-        }
+        const name = parser.previous.lexeme;
 
         if (can_assign and try parser.match(.equal)) {
-            // TODO: FIX
-            _ = try parser.expression();
-            parser.emitBytes(@intCast(@intFromEnum(set_op.?)), arg);
-        } else {
-            parser.emitBytes(@intCast(@intFromEnum(get_op.?)), arg);
+            const value = try parser.expression();
+            const node = try parser.allocator.create(Node);
+            node.* = .{ .assignment = .{ .target = name, .value = value } };
+            return node;
         }
+
+        // Otherwise it's a variable reference
+        const node = try parser.allocator.create(Node);
+        node.* = .{ .var_ref = .{ .name = name } };
+        return node;
     }
 
     fn resolveLocal(parser: *Parser, compiler: *Compiler, name: Token) ?u8 {
@@ -849,11 +842,6 @@ pub const Parser = struct {
                 .right = right_node,
             },
         };
-        //switch (optype) {
-        //.minus => parser.emitByte(@intFromEnum(OpCode.negate)),
-        //.bang => parser.emitByte(@intFromEnum(OpCode.not)),
-        //else => unreachable,
-        //}
         return node;
     }
 
@@ -873,35 +861,46 @@ pub const Parser = struct {
             },
         };
 
-        //switch (optype) {
-        //.plus => parser.emitByte(@intFromEnum(OpCode.add)),
-        //.minus => parser.emitByte(@intFromEnum(OpCode.sub)),
-        //.star => parser.emitByte(@intFromEnum(OpCode.mul)),
-        //.slash => parser.emitByte(@intFromEnum(OpCode.div)),
-        //.bang_equal => parser.emitBytes(@intFromEnum(OpCode.equal), @intFromEnum(OpCode.not)),
-        //.equal_equal => parser.emitByte(@intFromEnum(OpCode.equal)),
-        //.greater => parser.emitByte(@intFromEnum(OpCode.greater)),
-        //.greater_equal => parser.emitBytes(@intFromEnum(OpCode.less), @intFromEnum(OpCode.not)),
-        //.less => parser.emitByte(@intFromEnum(OpCode.less)),
-        //.less_equal => parser.emitBytes(@intFromEnum(OpCode.greater), @intFromEnum(OpCode.not)),
-        //else => unreachable,
-        //}
-
         return node;
     }
 
     fn call(parser: *Parser, can_assign: bool, left_node: ?*Node) !*Node {
         _ = can_assign;
-        const arg_count = try parser.argumentList();
-        parser.emitBytes(@intFromEnum(OpCode.call), arg_count);
-        return left_node.?; // TODO: FIX
+        const callee = left_node orelse unreachable;
+
+        // Parse arguments
+        var arguments: std.ArrayList(*Node) = .empty;
+
+        if (!parser.check(.right_paren)) {
+            while (true) {
+                if (arguments.items.len >= 255) {
+                    parser.err("Can't have more than 255 arguments.");
+                    break;
+                }
+                const arg = try parser.expression();
+                try arguments.append(parser.allocator, arg);
+
+                if (!try parser.match(.comma)) break;
+            }
+        }
+
+        try parser.consume(.right_paren, "Expect ')' after arguments.");
+
+        const node = try parser.allocator.create(Node);
+        node.* = .{
+            .call = .{
+                .callee = callee,
+                .arguments = try arguments.toOwnedSlice(parser.allocator),
+            },
+        };
+        return node;
     }
 
-    fn emitConstant(parser: *Parser, value: Value) !void {
+    pub fn emitConstant(parser: *Parser, value: Value) !void {
         parser.emitBytes(@intFromEnum(OpCode.constant), try parser.makeConstant(value));
     }
 
-    fn makeConstant(parser: *Parser, value: Value) !u8 {
+    pub fn makeConstant(parser: *Parser, value: Value) !u8 {
         parser.vm.push(value);
         const constant = parser.currentChunk().addConstant(value) catch {
             parser.err("Err adding constant");
@@ -917,7 +916,7 @@ pub const Parser = struct {
         return @intCast(constant);
     }
 
-    fn patchJump(parser: *Parser, offset: usize) void {
+    pub fn patchJump(parser: *Parser, offset: usize) void {
         // -2 to adjust for the bytecode for the jump offset itparser.
         const jump = parser.currentChunk().code.items.len - offset - 2;
 
@@ -929,19 +928,19 @@ pub const Parser = struct {
         parser.currentChunk().code.items[offset + 1] = @truncate(jump & 0xff);
     }
 
-    fn emitByte(parser: *Parser, byte: u8) void {
+    pub fn emitByte(parser: *Parser, byte: u8) void {
         parser.currentChunk().write(byte, parser.previous.line) catch |e| {
             std.log.err("Error {any} trying to emit byte\n", .{e});
             std.process.exit(1);
         };
     }
 
-    fn emitBytes(parser: *Parser, byte1: u8, byte2: u8) void {
+    pub fn emitBytes(parser: *Parser, byte1: u8, byte2: u8) void {
         parser.emitByte(byte1);
         parser.emitByte(byte2);
     }
 
-    fn emitLoop(parser: *Parser, loop_start: usize) void {
+    pub fn emitLoop(parser: *Parser, loop_start: usize) void {
         parser.emitByte(@intFromEnum(OpCode.loop));
 
         const offset = parser.currentChunk().code.items.len - loop_start + 2;
@@ -951,18 +950,18 @@ pub const Parser = struct {
         parser.emitByte(@truncate(offset & 0xff));
     }
 
-    fn emitJump(parser: *Parser, byte: u8) usize {
+    pub fn emitJump(parser: *Parser, byte: u8) usize {
         parser.emitByte(byte);
         // 16-bit placeholder operand to calculate the jump
         parser.emitBytes(0xff, 0xff);
         return parser.currentChunk().code.items.len - 2;
     }
 
-    fn currentChunk(parser: *Parser) *Chunk {
+    pub fn currentChunk(parser: *Parser) *Chunk {
         return &parser.compiler.func.chunk;
     }
 
-    fn endCompiler(parser: *Parser) *Obj.Function {
+    pub fn endCompiler(parser: *Parser) *Obj.Function {
         parser.emitReturn();
         const func = parser.compiler.func;
 
@@ -978,11 +977,11 @@ pub const Parser = struct {
         return func;
     }
 
-    fn beginScope(parser: *Parser) void {
+    pub fn beginScope(parser: *Parser) void {
         parser.compiler.scope_depth += 1;
     }
 
-    fn endScope(parser: *Parser) void {
+    pub fn endScope(parser: *Parser) void {
         parser.compiler.scope_depth -= 1;
         while (parser.compiler.local_count > 1 and
             parser.compiler.locals[parser.compiler.local_count - 1].depth.? > parser.compiler.scope_depth)
@@ -996,7 +995,7 @@ pub const Parser = struct {
         }
     }
 
-    fn emitReturn(parser: *Parser) void {
+    pub fn emitReturn(parser: *Parser) void {
         parser.emitByte(@intFromEnum(OpCode.nil));
         parser.emitByte(@intFromEnum(OpCode.ret));
     }

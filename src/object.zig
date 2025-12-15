@@ -121,8 +121,8 @@ pub const String = struct {
         const str = try Obj.create(vm, String, .string);
         str.bytes = bytes;
         str.hash = hash;
-        vm.push(Value{ .obj = &str.obj });
-        _ = try vm.strings.set(str, Value.nil);
+        vm.push(Value.fromObj(&str.obj));
+        _ = try vm.strings.set(str, Value.fromNil());
         _ = vm.pop();
         return str;
     }
@@ -255,7 +255,7 @@ pub const Upvalue = struct {
         const upvalue = try Obj.create(vm, Upvalue, .upvalue);
         upvalue.location = location;
         upvalue.next = null;
-        upvalue.closed = Value.nil;
+        upvalue.closed = Value.fromNil();
         return upvalue;
     }
 

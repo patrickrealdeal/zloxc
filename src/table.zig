@@ -42,7 +42,7 @@ pub fn Table(comptime KeyType: type, comptime ValueType: type) type {
         pub fn set(table: HT, key: KeyType, value: ValueType) !bool {
             return if (table.hm.fetchPut(table.allocator, key, value) catch {
                 std.debug.print("OOME: can't put the key to a table", .{});
-                return VM.VMError.OutOfMemory;
+                return error.VmOutOfMemory;
             }) |_| false else true;
         }
 
@@ -66,30 +66,6 @@ pub fn Table(comptime KeyType: type, comptime ValueType: type) type {
             }
         }
 
-        //pub fn removeWhite(table: HT) !usize {
-        //var bytes_freed: usize = 0;
-        //
-        //// Pass 1: Collect all unmarked keys.
-        //var keys_to_remove = std.ArrayList(KeyType).empty;
-        //defer keys_to_remove.deinit(table.allocator);
-        //
-        //var it = table.hm.iterator();
-        //while (it.next()) |kv| {
-        //if (!kv.key_ptr.*.isMarked()) {
-        //try keys_to_remove.append(table.allocator, kv.key_ptr.*);
-        //}
-        //}
-        //
-        //// Pass 2: Now it's safe to delete the entries.
-        //for (keys_to_remove.items) |key| {
-        //bytes_freed += key.bytes.len;
-        //if (comptime debug.log_gc) std.debug.print("DELETING: {s}\n", .{key.bytes});
-        //_ = table.delete(key);
-        //}
-        //
-        //return bytes_freed;
-        //}
-        //
         pub fn mark(table: HT, vm: *VM) !void {
             var it = table.hm.iterator();
             while (it.next()) |kv| {

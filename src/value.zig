@@ -25,7 +25,6 @@ pub const NanBoxedValue = packed struct {
     }
 
     pub fn isBool(v: NanBoxedValue) bool {
-        // This clever trick works because FALSE_VAL | 1 == TRUE_VAL
         return (v.bits | 1) == TRUE_VAL.bits;
     }
 
@@ -49,8 +48,9 @@ pub const NanBoxedValue = packed struct {
 
     pub fn asObj(v: NanBoxedValue) *Obj {
         std.debug.assert(v.isObj());
-        // We clear the sign bit to get the raw pointer address.
-        return @as(*Obj, @ptrFromInt(@as(u64, @intCast(v.bits & ~(SIGN_BIT | QNAN)))));
+        // Clear the SIGN_BIT and QNAN to get the raw 48-bit address
+        const pointer_int = v.bits & ~(SIGN_BIT | QNAN);
+        return @ptrFromInt(pointer_int);
     }
 
     pub fn fromNumber(n: f64) NanBoxedValue {
@@ -80,6 +80,12 @@ pub const NanBoxedValue = packed struct {
             return a.asNumber() == b.asNumber();
         }
         return a.bits == b.bits;
+    }
+
+    pub fn mark(self: NanBoxedValue, vm: *VM) !void {
+        if (self.isObj()) {
+            try self.asObj().mark(vm);
+        }
     }
 
     pub fn format(self: Value, writer: *std.Io.Writer) !void {
