@@ -11,6 +11,10 @@ pub fn main() !void {
     defer _ = arena.deinit();
     const arena_allocator = arena.allocator();
 
+    var dba: std.heap.DebugAllocator(.{}) = .init;
+    defer std.debug.assert(dba.deinit() == .ok);
+    //const debug_allocator = dba.allocator();
+
     var gc = GCAllocator.init(arena_allocator);
     const allocator = gc.allocator();
 

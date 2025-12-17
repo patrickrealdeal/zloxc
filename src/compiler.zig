@@ -10,7 +10,7 @@ const TokenType = Token.TokenType;
 const OpCode = Chunk.OpCode;
 const ast = @import("ast.zig");
 const Node = @import("ast.zig").Node;
-const codegen = @import("codegen.zig");
+const Codegen = @import("codegen.zig");
 
 const u8_max = std.math.maxInt(u8);
 const CompilerError = error{ CompilerError, TooManyLocalVariables, VarAlreadyDeclared };
@@ -97,31 +97,33 @@ pub fn compile(source: []const u8, vm: *VM) !?*Obj.Function {
     defer vm.parser = null;
     try parser.advance();
 
-    var statements: std.ArrayList(*Node) = .empty;
-    defer statements.deinit(parser.allocator);
+    var _ast: std.ArrayList(*Node) = .empty;
+    defer _ast.deinit(parser.allocator);
 
     const stack_before = vm.stack.items.len;
 
     while (!try parser.match(.eof)) {
         const stmt = try parser.declaration();
-        try statements.append(parser.allocator, stmt);
+        try _ast.append(parser.allocator, stmt);
     }
 
     if (debug.print_ast) {
         std.debug.print("\n=== AST ===\n", .{});
-        for (statements.items) |stmt| {
+        for (_ast.items) |stmt| {
             ast.printAst(stmt, 0);
         }
         std.debug.print("===========\n\n", .{});
     }
 
-    for (statements.items) |stmt| {
-        try codegen.emitFromAst(&parser, stmt);
+    var codegen = Codegen.init(&parser);
+    for (_ast.items) |stmt| {
+        try codegen.emitFromAst(stmt);
     }
 
     const stack_after = vm.stack.items.len;
     var i: usize = stack_after;
     while (i > stack_before) : (i -= 1) {
+        std.debug.print("Are we popping?\n", .{});
         _ = vm.pop();
     }
 
