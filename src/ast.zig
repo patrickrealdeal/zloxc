@@ -20,7 +20,8 @@ pub const Node = union(enum) {
     var_declaration: struct {
         name: []const u8,
         initializer: ?*Node,
-        global_index: ?u8,
+        scope_depth_at_declaration: u32,
+        //global_index: ?u8,
     },
     var_ref: struct {
         name: []const u8,
@@ -34,8 +35,14 @@ pub const Node = union(enum) {
         params: [][]const u8, // Parameter names
         body: *Node, // Should be a block
         arity: u8,
-        global_index: ?u8,
+        scope_depth_at_declaration: u32,
+        //global_index: ?u8,
         //mark_init: bool,
+    },
+    class_declaration: struct {
+        name: []const u8,
+        scope_depth_at_declaration: u32,
+        //token: Token,
     },
     call: struct {
         callee: *Node, // What we're calling (usually a var_ref)
@@ -80,19 +87,38 @@ pub fn printAst(node: *const Node, indent: usize) void {
     switch (node.*) {
         .literal => |val| {
             std.debug.print("Literal: ", .{});
-            switch (val) {
-                .number => |n| std.debug.print("{d}\n", .{n}),
-                .bool => |b| std.debug.print("{}\n", .{b}),
-                .nil => std.debug.print("nil\n", .{}),
-                .obj => |o| {
-                    if (o.obj_t == .string) {
-                        const str: *Obj.String = @fieldParentPtr("obj", o);
-                        std.debug.print("\"{s}\"\n", .{str.bytes});
-                    } else {
-                        std.debug.print("<obj>\n", .{});
-                    }
-                },
+            if (val.isNumber()) {
+                std.debug.print("{d}\n", .{val.asNumber()});
+            } else if (val.isBool()) {
+                std.debug.print("{}\n", .{val.asBool()});
+            } else if (val.isNil()) {
+                std.debug.print("nil\n", .{});
+            } else if (val.isObj()) {
+                const o = val.asObj();
+                if (o.obj_t == .string) {
+                    const str: *Obj.String = @fieldParentPtr("obj", o);
+                    std.debug.print("\"{s}\"\n", .{str.bytes});
+                } else {
+                    std.debug.print("<obj>\n", .{});
+                }
+            } else {
+                std.debug.print("Unknown NaN-boxed value\n", .{});
             }
+
+            //std.debug.print("Literal: ", .{});
+            //switch (val) {
+            //.number => |n| std.debug.print("{d}\n", .{n}),
+            //.bool => |b| std.debug.print("{}\n", .{b}),
+            //.nil => std.debug.print("nil\n", .{}),
+            //.obj => |o| {
+            //if (o.obj_t == .string) {
+            //const str: *Obj.String = @fieldParentPtr("obj", o);
+            //std.debug.print("\"{s}\"\n", .{str.bytes});
+            //} else {
+            //std.debug.print("<obj>\n", .{});
+            //}
+            //},
+            //}
         },
 
         .binary => |bin| {
@@ -113,17 +139,11 @@ pub fn printAst(node: *const Node, indent: usize) void {
         },
 
         .var_declaration => |decl| {
-            std.debug.print("VarDecl: {s}", .{decl.name});
-            if (decl.global_index) |g| {
-                std.debug.print(" (global {})\n", .{g});
-            } else {
-                std.debug.print(" (local)\n", .{});
-            }
+            std.debug.print("VarDecl: {s}\n", .{decl.name});
             if (decl.initializer) |init| {
-                printAst(init, indent + 1);
+                printAst(init, indent + 1); // Changed: removed 'try', use 'indent' parameter
             }
         },
-
         .var_ref => |var_ref| {
             std.debug.print("VarRef: {s}\n", .{var_ref.name});
         },
@@ -163,7 +183,10 @@ pub fn printAst(node: *const Node, indent: usize) void {
                 printAst(stmt, indent + 1);
             }
         },
-
+        .class_declaration => |class| {
+            std.debug.print("Class: {s}(", .{class.name});
+            std.debug.print(")\n", .{});
+        },
         .if_statement => |if_stmt| {
             std.debug.print("If:\n", .{});
             printIndent(indent + 1);

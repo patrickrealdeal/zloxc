@@ -16,6 +16,7 @@ pub const GCAllocator = struct {
     bytes_allocated: usize,
     next_gc: usize,
     is_collecting: bool,
+    disable_gc: bool,
 
     pub fn init(parent_allocator: Allocator) GCAllocator {
         return .{
@@ -24,6 +25,7 @@ pub const GCAllocator = struct {
             .bytes_allocated = 0,
             .next_gc = 4,
             .is_collecting = false,
+            .disable_gc = false,
         };
     }
 
@@ -41,7 +43,7 @@ pub const GCAllocator = struct {
 
     fn alloc(ctx: *anyopaque, len: usize, ptr_align: std.mem.Alignment, ret_address: usize) ?[*]u8 {
         const gca: *GCAllocator = @ptrCast(@alignCast(ctx));
-        if ((gca.bytes_allocated + len > gca.next_gc) or debug.stress_gc) {
+        if (!gca.disable_gc and (gca.bytes_allocated + len > gca.next_gc) or debug.stress_gc) {
             gca.collectGarbage() catch return null;
         }
 
@@ -55,7 +57,7 @@ pub const GCAllocator = struct {
     fn resize(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, new_len: usize, ret_address: usize) bool {
         const gca: *GCAllocator = @ptrCast(@alignCast(ctx));
         if (new_len > buf.len) {
-            if ((gca.bytes_allocated + (new_len - buf.len) > gca.next_gc) or debug.stress_gc) {
+            if (!gca.disable_gc and ((gca.bytes_allocated + (new_len - buf.len) > gca.next_gc)) or debug.stress_gc) {
                 gca.collectGarbage() catch return false;
             }
         }
@@ -80,7 +82,7 @@ pub const GCAllocator = struct {
         const delta_bytes = if (new_len > memory.len) new_len - memory.len else 0;
 
         // Trigger garbage collection if needed before allocating more memory.
-        if ((gca.bytes_allocated + delta_bytes > gca.next_gc) or debug.stress_gc) {
+        if (!gca.disable_gc and ((gca.bytes_allocated + delta_bytes > gca.next_gc)) or debug.stress_gc) {
             gca.collectGarbage() catch return null;
         }
 
@@ -125,6 +127,7 @@ pub const GCAllocator = struct {
         }
 
         try vm.globals.mark(vm);
+        //try vm.strings.mark(vm);
 
         var i: u32 = 0;
         while (i < vm.frame_count) : (i += 1) {
@@ -154,6 +157,11 @@ pub const GCAllocator = struct {
 
     fn sweep(gca: *GCAllocator) void {
         const vm = gca.vm orelse return;
+
+        // Remove white entries from tables BEFORE sweeping objects
+        vm.globals.removeWhite();
+        vm.strings.removeWhite();
+
         var previous: ?*Obj = null;
         var object = vm.objects;
         while (object) |o| {
@@ -176,7 +184,10 @@ pub const GCAllocator = struct {
     }
 
     pub fn collectGarbage(gca: *GCAllocator) !void {
-        if (gca.is_collecting) return;
+        if (gca.is_collecting or gca.disable_gc) {
+            //std.debug.print("WARNING: Recursive GC attempt blocked!\n", .{});
+            return;
+        }
         gca.is_collecting = true;
         defer gca.is_collecting = false;
 
@@ -201,6 +212,8 @@ pub const GCAllocator = struct {
             "-- gc end\ncollected {d:} bytes (from {d:} to {d:}) next at {d}\n",
             .{ before - gca.bytes_allocated, before, gca.bytes_allocated, gca.next_gc },
         );
+
+        std.debug.print("-- gc end\n", .{});
     }
 };
 

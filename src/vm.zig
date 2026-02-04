@@ -10,7 +10,7 @@ const GCAllocator = @import("memory.zig").GCAllocator;
 const Obj = @import("object.zig");
 const NativeFn = Obj.Native.NativeFn;
 const Parser = @import("compiler.zig").Parser;
-const Table = @import("table.zig").Table;
+const Table = @import("table.zig");
 const Value = @import("value.zig").Value;
 
 const u8_max = std.math.maxInt(u8) + 1;
@@ -28,8 +28,8 @@ stack: FixedCapacityStack(Value),
 allocator: Allocator,
 objects: ?*Obj,
 open_upvalues: ?*Obj.Upvalue, // the head pointer goes right inside the main VM struct
-strings: Table(*Obj.String, Value),
-globals: Table(*Obj.String, Value),
+strings: Table.StringTable,
+globals: Table.GlobalsTable,
 gray_stack: std.ArrayList(*Obj),
 parser: ?*Parser,
 
@@ -62,8 +62,8 @@ pub fn init(gc_allocator: Allocator) !*VM {
 
     vm.* = .{
         .stack = try .init(gc.parent_allocator, stack_max),
-        .strings = .init(gc_allocator),
-        .globals = .init(gc_allocator),
+        .strings = Table.createStringTable(gc_allocator),
+        .globals = Table.createGlobalsTable(gc_allocator),
         .gray_stack = .empty,
         .ip = 0,
         .allocator = gc_allocator,
