@@ -1,3 +1,4 @@
+.gitignore
 zig-out
 .zig-cache
 loxtests
