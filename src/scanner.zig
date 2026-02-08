@@ -34,8 +34,9 @@ pub fn scanToken(scanner: *Self) Token {
         '}' => scanner.makeToken(.right_brace),
         ';' => scanner.makeToken(.semicolon),
         ',' => scanner.makeToken(.comma),
+        ':' => if (scanner.match('=')) scanner.makeToken(.colon_equal) else scanner.makeToken(.colon),
         '.' => scanner.makeToken(.dot),
-        '-' => scanner.makeToken(.minus),
+        '-' => if (scanner.match('>')) scanner.makeToken(.arrow) else scanner.makeToken(.minus),
         '+' => scanner.makeToken(.plus),
         '*' => scanner.makeToken(.star),
         '/' => scanner.makeToken(.slash),
@@ -133,21 +134,36 @@ fn identifier(scanner: *Self) Token {
 
 fn identifierType(scanner: *Self) TokenType {
     return switch (scanner.source[scanner.start]) {
+        'l' => scanner.checkKeyword("let", .let),
         'a' => scanner.checkKeyword("and", .@"and"),
         'c' => scanner.checkKeyword("class", .class),
         'e' => scanner.checkKeyword("else", .@"else"),
-        'i' => scanner.checkKeyword("if", .@"if"),
+        'i' => switch (scanner.source[scanner.start + 1]) {
+            'f' => scanner.checkKeyword("if", .@"if"),
+            'n' => scanner.checkKeyword("int", .type_int),
+            else => .identifier,
+        },
+        'b' => scanner.checkKeyword("bool", .type_bool),
         'n' => scanner.checkKeyword("nil", .nil),
         'o' => scanner.checkKeyword("or", .@"or"),
         'p' => scanner.checkKeyword("print", .print),
         'r' => scanner.checkKeyword("return", .@"return"),
-        's' => scanner.checkKeyword("super", .super),
-        'v' => scanner.checkKeyword("var", .@"var"),
+        's' => switch (scanner.source[scanner.start + 1]) {
+            'u' => scanner.checkKeyword("super", .super),
+            't' => scanner.checkKeyword("string", .type_string),
+            else => .identifier,
+        },
+        'v' => switch (scanner.source[scanner.start + 1]) {
+            'a' => scanner.checkKeyword("var", .@"var"),
+            'o' => scanner.checkKeyword("void", .type_void),
+            else => .identifier,
+        },
         'w' => scanner.checkKeyword("while", .@"while"),
         'f' => switch (scanner.source[scanner.start + 1]) {
             'a' => scanner.checkKeyword("false", .false),
             'o' => scanner.checkKeyword("for", .@"for"),
             'u' => scanner.checkKeyword("fun", .fun),
+            'l' => scanner.checkKeyword("float", .type_float),
             else => .identifier,
         },
         't' => switch (scanner.source[scanner.start + 1]) {
@@ -192,3 +208,4 @@ fn advance(scanner: *Self) u8 {
 pub fn isAtEnd(scanner: *Self) bool {
     return scanner.current >= scanner.source.len;
 }
+

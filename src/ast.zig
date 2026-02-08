@@ -3,15 +3,28 @@ const Token = @import("token.zig");
 const TokenType = @import("token.zig").TokenType;
 const Value = @import("value.zig").Value;
 const Obj = @import("object.zig");
+const Type = @import("type.zig").Type;
+const TypeAnnotation = @import("type.zig").TypeAnnotation;
 
 const Allocator = std.mem.Allocator;
 
+pub const SourceLoc = struct {
+    line: usize,
+    column: usize,
+    length: usize,
+};
+
 pub const Node = union(enum) {
     literal: Value,
+    number_literal: struct {
+        value: Value,
+        lexeme: []const u8, // Original source text (e.g., "0.0" or "42")
+    },
     binary: struct {
         left: *Node,
         op: TokenType,
         right: *Node,
+        result_type: Type,
     },
     unary: struct {
         op: TokenType,
@@ -21,7 +34,8 @@ pub const Node = union(enum) {
         name: []const u8,
         initializer: ?*Node,
         scope_depth_at_declaration: u32,
-        //global_index: ?u8,
+        type_annotation: ?TypeAnnotation,
+        inferred_type: Type,
     },
     var_ref: struct {
         name: []const u8,
@@ -29,15 +43,15 @@ pub const Node = union(enum) {
     assignment: struct {
         target: []const u8,
         value: *Node,
+        loc: SourceLoc,
     },
     function_declaration: struct {
         name: []const u8,
-        params: [][]const u8, // Parameter names
+        params: []Parameter, // Parameter names
         body: *Node, // Should be a block
         arity: u8,
         scope_depth_at_declaration: u32,
-        //global_index: ?u8,
-        //mark_init: bool,
+        return_type: Type,
     },
     class_declaration: struct {
         name: []const u8,
@@ -75,6 +89,12 @@ pub const Node = union(enum) {
     ret_statement: struct {
         value: ?*Node,
     },
+};
+
+/// Typed parameter for functions
+pub const Parameter = struct {
+    name: []const u8,
+    param_type: Type,
 };
 
 pub fn printAst(node: *const Node, indent: usize) void {
@@ -119,6 +139,10 @@ pub fn printAst(node: *const Node, indent: usize) void {
             //}
             //},
             //}
+        },
+
+        .number_literal => |num_lit| {
+            std.debug.print("NumberLiteral: {s} (value: {d})\n", .{ num_lit.lexeme, num_lit.value.asNumber() });
         },
 
         .binary => |bin| {
@@ -260,3 +284,4 @@ fn printIndent(indent: usize) void {
         std.debug.print("  ", .{});
     }
 }
+

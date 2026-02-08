@@ -1,0 +1,274 @@
+// Test: Edge Cases and Type System Stress Test
+// Tests boundary conditions, type conversions, and error recovery
+
+print "=== Numeric Edge Cases ===";
+
+// Integer boundaries
+var maxInt : int = 2147483647;  // Max 32-bit int
+var minInt : int = -2147483648; // Min 32-bit int
+print maxInt;
+print minInt;
+
+// Zero handling
+var zero : int = 0;
+var negZero : float = -0.0;
+print zero;
+print negZero;
+
+// Float precision
+var tiny : float = 0.0000001;
+var huge : float = 999999.99;
+print tiny;
+print huge;
+
+// === TYPE CONVERSION EDGE CASES ===
+print "=== Type Conversions ===";
+
+// Int to float (implicit conversion in function calls)
+fun acceptsFloat(x: float) : float {
+    return x * 2.0;
+}
+
+var intValue : int = 42;
+var result : float = acceptsFloat(intValue);  // Explicit float type
+print result;  // Should print: 84
+
+// Multiple conversions in one expression
+fun complexMath(a: float, b: float, c: float) : float {
+    return a * b + c;
+}
+
+print complexMath(2, 3, 4);  // 2*3+4 = 10 (ints converted to floats)
+
+// === NESTED FUNCTION CALLS ===
+print "=== Nested Calls ===";
+
+fun double(n: int) : int {
+    return n * 2;
+}
+
+fun triple(n: int) : int {
+    return n * 3;
+}
+
+fun add(a: int, b: int) : int {
+    return a + b;
+}
+
+print add(double(5), triple(3));  // (5*2) + (3*3) = 10 + 9 = 19
+
+// Deep nesting
+fun f1(x: int) : int { return x + 1; }
+fun f2(x: int) : int { return f1(x) + 1; }
+fun f3(x: int) : int { return f2(x) + 1; }
+fun f4(x: int) : int { return f3(x) + 1; }
+
+print f4(0);  // Should print: 4
+
+// === RECURSIVE EDGE CASES ===
+print "=== Recursion Edge Cases ===";
+
+// Fibonacci
+fun fib(n: int) : int {
+    if (n <= 1) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+print fib(0);   // Should print: 0
+print fib(1);   // Should print: 1
+print fib(7);   // Should print: 13
+
+// Mutual recursion - NOT SUPPORTED (requires forward declarations)
+// Your language would need forward declarations for this pattern
+// Commenting out for now:
+// fun isEven(n: int) : bool;  // Forward declaration
+// fun isOdd(n: int) : bool { ... }
+// fun isEven(n: int) : bool { ... }
+
+// === STRING EDGE CASES ===
+print "=== String Edge Cases ===";
+
+var empty : string = "";
+print empty;  // Should print empty line
+
+var spaces : string = "   ";
+print spaces;
+
+var special : string = "Hello\nWorld";  // If escape sequences supported
+print special;
+
+// String concatenation
+var first : string = "Hello";
+var second : string = " ";
+var third : string = "World";
+var combined : string = first + second + third;
+print combined;  // Should print: Hello World
+
+// === BOOLEAN LOGIC EDGE CASES ===
+print "=== Boolean Edge Cases ===";
+
+var t : bool = true;
+var f : bool = false;
+
+// All combinations
+print t and t;  // true
+print t and f;  // false
+print f and t;  // false
+print f and f;  // false
+
+print t or t;   // true
+print t or f;   // true
+print f or t;   // true
+print f or f;   // false
+
+// Negation
+print !t;  // false
+print !f;  // true
+print !!t; // true
+
+// === COMPARISON EDGE CASES ===
+print "=== Comparisons ===";
+
+// Equality
+print 5 == 5;    // true
+print 5 == 6;    // false
+print 5 != 6;    // true
+print 5 != 5;    // false
+
+// String equality
+print "hello" == "hello";  // true
+print "hello" == "world";  // false
+
+// Boolean equality
+print true == true;   // true
+print true == false;  // false
+print false == false; // true
+
+// Ordering
+print 5 < 10;   // true
+print 10 < 5;   // false
+print 5 <= 5;   // true
+print 5 >= 5;   // true
+print 10 > 5;   // true
+print 5 > 10;   // false
+
+// Float comparisons
+print 3.14 > 3.0;   // true
+print 2.5 == 2.5;   // true
+print 1.0 < 2.0;    // true
+
+// === NIL HANDLING ===
+print "=== Nil Tests ===";
+
+var nothing := nil;
+print nothing;  // Should print: nil
+
+// Nil in conditionals - NOT SUPPORTED
+// Your type system requires bool in conditions, nil is not a bool
+// Commenting out:
+// if (nil) { ... }
+
+// Nil equality
+print nil == nil;  // true
+print nil != nil;  // false
+
+// === EXPRESSION COMPLEXITY ===
+print "=== Complex Expressions ===";
+
+var a : int = 5;
+var b : int = 10;
+var c : int = 15;
+
+print a + b * c;              // 5 + (10*15) = 155
+print (a + b) * c;            // (5+10)*15 = 225
+print a * b + c * 2;          // 50 + 30 = 80
+print (a + b) * (c - a);      // 15 * 10 = 150
+
+// With comparisons
+print (a < b) and (b < c);    // true and true = true
+print (a > b) or (c > b);     // false or true = true
+print !(a == b) and (c != a); // true and true = true
+
+// === SCOPE COMPLEXITY ===
+print "=== Deep Scope Nesting ===";
+
+{
+    var level1 : int = 1;
+    {
+        var level2 : int = 2;
+        {
+            var level3 : int = 3;
+            {
+                var level4 : int = 4;
+                {
+                    var level5 : int = 5;
+                    print level1 + level2 + level3 + level4 + level5;  // 15
+                }
+            }
+        }
+    }
+}
+
+// === FUNCTION PARAMETER EDGE CASES ===
+print "=== Function Parameters ===";
+
+// No parameters
+fun noParams() : int {
+    return 42;
+}
+print noParams();  // Should print: 42
+
+// Many parameters
+fun manyParams(a: int, b: int, c: int, d: int, e: int) : int {
+    return a + b + c + d + e;
+}
+print manyParams(1, 2, 3, 4, 5);  // Should print: 15
+
+// Mixed types
+fun mixedTypes(i: int, f: float, s: string, b: bool) : void {
+    print i;
+    print f;
+    print s;
+    print b;
+}
+mixedTypes(42, 3.14, "test", true);
+
+// === RETURN EDGE CASES ===
+print "=== Return Edge Cases ===";
+
+// Early return
+fun earlyReturn(n: int) : int {
+    if (n < 0) {
+        return 0;
+    }
+    return n * 2;
+}
+print earlyReturn(-5);  // Should print: 0
+print earlyReturn(5);   // Should print: 10
+
+// Multiple returns
+fun multiReturn(n: int) : string {
+    if (n < 0) return "negative";
+    if (n == 0) return "zero";
+    if (n > 0) return "positive";
+    return "unreachable";
+}
+print multiReturn(-1);  // negative
+print multiReturn(0);   // zero
+print multiReturn(1);   // positive
+
+// Void functions with early return
+fun voidEarlyReturn(flag: bool) : void {
+    if (flag) {
+        print "Flag is true";
+        return;
+    }
+    print "Flag is false";
+}
+voidEarlyReturn(true);   // Should print: Flag is true
+voidEarlyReturn(false);  // Should print: Flag is false
+
+print "=== Edge Cases Complete ===";
+

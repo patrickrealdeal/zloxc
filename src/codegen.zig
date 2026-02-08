@@ -30,6 +30,10 @@ pub fn emitFromAst(self: *Codegen, node: *Node) !void {
             try self.emitConstant(val);
         },
 
+        .number_literal => |num_lit| {
+            try self.emitConstant(num_lit.value);
+        },
+
         .binary => |bin| {
             try self.emitFromAst(bin.left);
             try self.emitFromAst(bin.right);
@@ -75,7 +79,7 @@ pub fn emitFromAst(self: *Codegen, node: *Node) !void {
         },
 
         .var_declaration => |decl| {
-            std.debug.print("DEBUG: Declaring var '{s}' at scope depth {}\n", .{ decl.name, decl.scope_depth_at_declaration });
+            //std.debug.print("DEBUG: Declaring var '{s}' at scope depth {}\n", .{ decl.name, decl.scope_depth_at_declaration });
 
             // Emit initializer or nil
             if (decl.initializer) |initt| {
@@ -225,7 +229,7 @@ pub fn emitFromAst(self: *Codegen, node: *Node) !void {
 
             // Add parameters as locals
             for (func_decl.params) |param| {
-                try self.addLocal(param);
+                try self.addLocal(param.name);
                 self.markInitialized();
             }
 
@@ -269,15 +273,48 @@ pub fn emitFromAst(self: *Codegen, node: *Node) !void {
         },
 
         .call => |call_expr| {
-            // Emit the callee
-            try self.emitFromAst(call_expr.callee);
+            // Check if this is a recursive self-call
+            const is_self_recursive = blk: {
+                if (call_expr.callee.* != .var_ref) break :blk false;
+                const callee_name = call_expr.callee.var_ref.name;
+
+                // Special case: typeOf is a builtin
+                if (std.mem.eql(u8, callee_name, "typeOf")) break :blk false;
+
+                // Check if calling the current function
+                if (self.compiler.func.name) |fname| {
+                    break :blk std.mem.eql(u8, callee_name, fname.bytes);
+                }
+                break :blk false;
+            };
+
+            if (is_self_recursive) {
+                // Recursive call optimization: use local slot 0 (the function itself)
+                // This avoids expensive global hash table lookup
+                self.emitBytes(@intFromEnum(OpCode.get_local), 0);
+            } else {
+                // Special handling for typeOf()
+                if (call_expr.callee.* == .var_ref) {
+                    const callee_name = call_expr.callee.var_ref.name;
+                    if (std.mem.eql(u8, callee_name, "typeOf")) {
+                        // Emit the argument
+                        try self.emitFromAst(call_expr.arguments[0]);
+                        // Emit TYPE_OF instruction
+                        self.emitByte(@intFromEnum(OpCode.type_of));
+                        return;
+                    }
+                }
+
+                // Normal call: emit the callee expression
+                try self.emitFromAst(call_expr.callee);
+            }
 
             // Emit all arguments
             for (call_expr.arguments) |arg| {
                 try self.emitFromAst(arg);
             }
 
-            // Emit call instruction with argument count
+            // Emit the call instruction
             self.emitBytes(@intFromEnum(OpCode.call), @intCast(call_expr.arguments.len));
         },
 
@@ -420,7 +457,7 @@ fn currentChunk(self: *Codegen) *Chunk {
 // ============================================================================
 
 fn emitVariableGet(self: *Codegen, name: []const u8) !void {
-    std.debug.print("DEBUG: Getting var '{s}' at scope depth {}\n", .{ name, self.compiler.scope_depth });
+    //std.debug.print("DEBUG: Getting var '{s}' at scope depth {}\n", .{ name, self.compiler.scope_depth });
     var get_op: OpCode = undefined;
     var arg: u8 = undefined;
 
@@ -560,3 +597,4 @@ fn endCompilerInternal(self: *Codegen) *Obj.Function {
 
     return func;
 }
+

@@ -3,6 +3,17 @@ lexeme: []const u8,
 line: usize,
 
 pub const TokenType = enum {
+    let,
+    colon_equal,
+    colon,
+    arrow,
+
+    type_int,
+    type_float,
+    type_bool,
+    type_string,
+    type_void,
+
     // single character tokens
     left_paren,
     right_paren,
@@ -52,3 +63,4 @@ pub const TokenType = enum {
     err,
     eof,
 };
+

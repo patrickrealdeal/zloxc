@@ -35,6 +35,7 @@ pub const OpCode = enum(usize) {
     closure,
     close_upvalue,
     ret,
+    type_of,
 };
 
 const Sign = enum { neg, pos };
@@ -60,7 +61,16 @@ pub fn deinit(chunk: *Chunk) void {
 }
 
 /// returns index where constants was appended
+/// Deduplicates constants to reduce memory and improve cache locality
 pub fn addConstant(chunk: *Chunk, value: Value) !usize {
+    // Check if this constant already exists
+    for (chunk.constants.items, 0..) |existing, i| {
+        if (Value.eq(existing, value)) {
+            return i;
+        }
+    }
+
+    // Add new constant
     try chunk.constants.append(chunk.allocator, value);
     return chunk.constants.items.len - 1;
 }
@@ -118,6 +128,7 @@ pub fn disassembleInstruction(chunk: *Chunk, offset: usize) usize {
         .class => return constantInstruction("op_class", chunk, offset),
         .closure => return closureInstruction("op_closure", chunk, offset),
         .close_upvalue => return simpleInstruction("op_close_upvalue", offset),
+        .type_of => return simpleInstruction("op_type_of", offset),
         .ret => return simpleInstruction("op_ret", offset),
     }
 }
@@ -172,3 +183,4 @@ fn jumpInstruction(name: []const u8, sign: Sign, chunk: *Chunk, offset: usize) u
     std.debug.print("{s: <16} {d:4} -> {d}\n", .{ name, offset, jump_addr });
     return offset + 3;
 }
+

@@ -11,7 +11,9 @@ const Obj = @import("object.zig");
 const NativeFn = Obj.Native.NativeFn;
 const Parser = @import("compiler.zig").Parser;
 const Table = @import("table.zig");
+const TypeChecker = @import("typechecker.zig").TypeChecker;
 const Value = @import("value.zig").Value;
+const Type = @import("type.zig").Type;
 
 const u8_max = std.math.maxInt(u8) + 1;
 
@@ -32,6 +34,8 @@ strings: Table.StringTable,
 globals: Table.GlobalsTable,
 gray_stack: std.ArrayList(*Obj),
 parser: ?*Parser,
+type_checker: TypeChecker, // Persistent type checker for REPL
+is_repl: bool, // Track if we're in REPL mode
 
 const CallFrame = struct {
     closure: *Obj.Closure,
@@ -73,6 +77,8 @@ pub fn init(gc_allocator: Allocator) !*VM {
         .objects = null,
         .open_upvalues = null,
         .parser = null,
+        .type_checker = TypeChecker.init(gc_allocator),
+        .is_repl = false,
     };
 
     try vm.defineNative("clock", clockNative);
@@ -80,6 +86,14 @@ pub fn init(gc_allocator: Allocator) !*VM {
     try vm.defineNative("cos", cosNative);
     try vm.defineNative("sin", sinNative);
     try vm.defineNative("str", strNative);
+
+    // Register native functions with type checker
+    try vm.type_checker.registerNative("clock", &[_]Type{}, Type.float); // clock() -> float
+    try vm.type_checker.registerNative("sqrt", &[_]Type{Type.float}, Type.float); // sqrt(float) -> float
+    try vm.type_checker.registerNative("cos", &[_]Type{Type.float}, Type.float); // cos(float) -> float
+    try vm.type_checker.registerNative("sin", &[_]Type{Type.float}, Type.float); // sin(float) -> float
+    try vm.type_checker.registerNative("str", &[_]Type{Type.float}, Type.string); // str(float) -> string
+
     return vm;
 }
 
@@ -91,11 +105,12 @@ pub fn deinit(vm: *VM) void {
     vm.strings.deinit();
     vm.globals.deinit();
     vm.stack.deinit();
+    vm.type_checker.deinit();
 }
 
 pub fn interpret(vm: *VM, source: []const u8) !void {
     std.debug.assert(vm.stack.items.len == 0);
-    defer std.debug.assert(vm.stack.items.len == 0);
+    defer vm.stack.resize(0) catch {};
 
     if (try compiler.compile(source, vm)) |func| {
         vm.push(Value.fromObj(&func.obj));
@@ -112,36 +127,64 @@ pub fn interpret(vm: *VM, source: []const u8) !void {
     return error.VmCompileError;
 }
 
-fn run(vm: *VM) !void {
+pub fn run(vm: *VM) !void {
     vm.frame = &vm.frames[vm.frame_count - 1];
+
+    // SUPER OPTIMIZATION: Cache hot pointers to reduce indirection
+    // This is what Ruby/Lua do - keep IP and code in local variables
+    var frame = vm.frame;
+    var ip = frame.ip;
+    var code = frame.closure.func.chunk.code.items;
 
     while (true) {
         if (comptime debug.trace_execution) {
-            _ = Chunk.disassembleInstruction(&vm.frame.closure.func.chunk, vm.frame.ip);
+            frame.ip = ip; // Write back for debugging
+            _ = Chunk.disassembleInstruction(&frame.closure.func.chunk, ip);
         }
 
         if (comptime debug.trace_stack) {
             vm.traceStackExecution();
         }
 
-        const instruction: OpCode = @enumFromInt(vm.readByte());
+        // OPTIMIZATION: Direct pointer access instead of method call
+        const instruction: OpCode = @enumFromInt(code[ip]);
+        ip += 1;
+
         switch (instruction) {
             .constant => {
-                const constant = vm.readConstant();
+                const idx = code[ip];
+                ip += 1;
+                const constant = frame.closure.func.chunk.constants.items[idx];
                 vm.push(constant);
             },
             .negate => {
                 if (!Value.isNumber(vm.peek(0))) {
+                    frame.ip = ip;
                     try vm.runtimeErr("Operand must be a number!", .{});
                 }
                 const val_ptr = &vm.stack.items[vm.stack.items.len - 1];
                 val_ptr.* = Value.fromNumber(-val_ptr.asNumber());
-                //vm.stack.items[vm.stack.items.len - 1].number = -vm.stack.items[vm.stack.items.len - 1].number;
             },
-            .add => try vm.binaryOp(.add),
-            .sub => try vm.binaryOp(.sub),
-            .mul => try vm.binaryOp(.mul),
-            .div => try vm.binaryOp(.div),
+            .add => {
+                frame.ip = ip;
+                try vm.binaryOp(.add);
+                ip = frame.ip;
+            },
+            .sub => {
+                frame.ip = ip;
+                try vm.binaryOp(.sub);
+                ip = frame.ip;
+            },
+            .mul => {
+                frame.ip = ip;
+                try vm.binaryOp(.mul);
+                ip = frame.ip;
+            },
+            .div => {
+                frame.ip = ip;
+                try vm.binaryOp(.div);
+                ip = frame.ip;
+            },
             .true => vm.push(Value.fromBool(true)),
             .false => vm.push(Value.fromBool(false)),
             .nil => vm.push(Value.fromNil()),
@@ -151,21 +194,33 @@ fn run(vm: *VM) !void {
                 const a = vm.pop();
                 vm.push(Value.fromBool(Value.eq(a, b)));
             },
-            .greater => try vm.binaryOp(.gt),
-            .less => try vm.binaryOp(.lt),
+            .greater => {
+                frame.ip = ip;
+                try vm.binaryOp(.gt);
+                ip = frame.ip;
+            },
+            .less => {
+                frame.ip = ip;
+                try vm.binaryOp(.lt);
+                ip = frame.ip;
+            },
             .print => {
-                //const writer = std.io.getStdOut().writer();
                 std.debug.print("{f}\n", .{vm.pop()});
             },
             .pop => _ = vm.pop(),
             .define_global => {
-                const name = vm.readString();
+                const idx = code[ip];
+                ip += 1;
+                const name = frame.closure.func.chunk.constants.items[idx].asObj().as(Obj.String);
                 _ = try vm.globals.set(name, vm.peek(0));
                 _ = vm.pop();
             },
             .get_global => {
-                const name = vm.readString();
+                const idx = code[ip];
+                ip += 1;
+                const name = frame.closure.func.chunk.constants.items[idx].asObj().as(Obj.String);
                 const value = vm.globals.get(name) orelse {
+                    frame.ip = ip;
                     _ = vm.pop();
                     try vm.runtimeErr("Undefined variable {s}.\n", .{name.bytes});
                     return error.VmUndefinedVariable;
@@ -173,68 +228,104 @@ fn run(vm: *VM) !void {
                 vm.push(value);
             },
             .set_global => {
-                const name = vm.readString();
+                const idx = code[ip];
+                ip += 1;
+                const name = frame.closure.func.chunk.constants.items[idx].asObj().as(Obj.String);
                 if (try vm.globals.set(name, vm.peek(0))) {
                     _ = vm.globals.delete(name);
+                    frame.ip = ip;
                     try vm.runtimeErr("Undefined variable {s}.\n", .{name.bytes});
                     return error.VmUndefinedVariable;
                 }
             },
             .get_local => {
-                const slot = vm.readByte();
-                vm.push(vm.stack.items[vm.frame.slot_offset + slot]);
+                const slot = code[ip];
+                ip += 1;
+                vm.push(vm.stack.items[frame.slot_offset + slot]);
             },
             .set_local => {
-                const slot = vm.readByte();
-                vm.stack.items[vm.frame.slot_offset + slot] = vm.peek(0);
+                const slot = code[ip];
+                ip += 1;
+                vm.stack.items[frame.slot_offset + slot] = vm.peek(0);
             },
             .get_upvalue => {
-                const slot = vm.readByte();
-                vm.push(vm.frame.closure.upvalues[slot].?.location.*);
+                const slot = code[ip];
+                ip += 1;
+                vm.push(frame.closure.upvalues[slot].?.location.*);
             },
             .set_upvalue => {
-                const slot = vm.readByte();
-                vm.frame.closure.upvalues[slot].?.location.* = vm.peek(0);
+                const slot = code[ip];
+                ip += 1;
+                frame.closure.upvalues[slot].?.location.* = vm.peek(0);
             },
             .close_upvalue => {
                 vm.closeUpvalues(&vm.stack.items[vm.stack.items.len - 1]);
                 _ = vm.pop();
             },
             .jump_if_false => {
-                const offset = vm.readU16();
-                if (isFalsey(vm.peek(0))) vm.frame.ip += offset;
+                const byte1: u16 = code[ip];
+                const byte2: u16 = code[ip + 1];
+                ip += 2;
+                const offset = (byte1 << 8) | byte2;
+                if (isFalsey(vm.peek(0))) ip += offset;
             },
             .jump => {
-                const offset = vm.readU16();
-                vm.frame.ip += offset;
+                const byte1: u16 = code[ip];
+                const byte2: u16 = code[ip + 1];
+                ip += 2;
+                const offset = (byte1 << 8) | byte2;
+                ip += offset;
             },
             .loop => {
-                const offset = vm.readU16();
-                vm.frame.ip -= offset;
+                const byte1: u16 = code[ip];
+                const byte2: u16 = code[ip + 1];
+                ip += 2;
+                const offset = (byte1 << 8) | byte2;
+                ip -= offset;
             },
             .call => {
-                const arg_count = vm.readByte();
+                const arg_count = code[ip];
+                ip += 1;
+                frame.ip = ip;
                 try vm.callValue(vm.peek(arg_count), arg_count);
-                vm.frame = &vm.frames[vm.frame_count - 1];
+                // Reload all cached pointers after call
+                frame = &vm.frames[vm.frame_count - 1];
+                ip = frame.ip;
+                code = frame.closure.func.chunk.code.items;
             },
             .class => {
-                const klass = try Obj.Class.allocate(vm, vm.readString());
+                const idx = code[ip];
+                ip += 1;
+                const name = frame.closure.func.chunk.constants.items[idx].asObj().as(Obj.String);
+                const klass = try Obj.Class.allocate(vm, name);
                 vm.push(Value.fromObj(&klass.obj));
             },
             .closure => {
-                const func = vm.readConstant().asObj().as(Obj.Function);
+                const idx = code[ip];
+                ip += 1;
+                const func = frame.closure.func.chunk.constants.items[idx].asObj().as(Obj.Function);
                 const closure = try Obj.Closure.allocate(vm, func);
                 vm.push(Value.fromObj(&closure.obj));
 
                 for (closure.upvalues) |*upvalue| {
-                    const is_local = vm.readByte() != 0;
-                    const index = vm.readByte();
+                    const is_local = code[ip] != 0;
+                    ip += 1;
+                    const index = code[ip];
+                    ip += 1;
                     if (is_local) {
-                        upvalue.* = try vm.captureUpvalue(&vm.stack.items[vm.frame.slot_offset + index]);
+                        upvalue.* = try vm.captureUpvalue(&vm.stack.items[frame.slot_offset + index]);
                     } else {
-                        upvalue.* = vm.frame.closure.upvalues[index];
+                        upvalue.* = frame.closure.upvalues[index];
                     }
                 }
+            },
+            .type_of => {
+                const value = vm.peek(0);
+                frame.ip = ip;
+                const type_str = try vm.getTypeString(value);
+                _ = vm.pop();
+                vm.push(.fromObj(&type_str.obj));
+                ip = frame.ip;
             },
             .ret => {
                 const result = vm.pop();
@@ -245,22 +336,57 @@ fn run(vm: *VM) !void {
                     return;
                 }
 
-                vm.stack.items.len = vm.frame.slot_offset;
+                vm.stack.items.len = frame.slot_offset;
                 vm.push(result);
-                vm.closeUpvalues(&vm.stack.items[vm.frame.slot_offset]);
-                vm.frame = &vm.frames[vm.frame_count - 1];
+                vm.closeUpvalues(&vm.stack.items[frame.slot_offset]);
+                // Reload all cached pointers after return
+                frame = &vm.frames[vm.frame_count - 1];
+                ip = frame.ip;
+                code = frame.closure.func.chunk.code.items;
             },
         }
     }
 }
 
-fn readByte(vm: *VM) u8 {
+fn getTypeString(self: *VM, value: Value) !*Obj.String {
+    const type_name: []const u8 = if (value.isNumber()) blk: {
+        // Check if it's an int or float based on the value
+        const num = value.asNumber();
+        if (@floor(num) == num and num >= std.math.minInt(i32) and num <= std.math.maxInt(i32)) {
+            break :blk "int";
+        } else {
+            break :blk "float";
+        }
+    } else if (value.isBool()) blk: {
+        break :blk "bool";
+    } else if (value.isNil()) blk: {
+        break :blk "nil";
+    } else if (value.isObj()) blk: {
+        const obj = value.asObj();
+        break :blk switch (obj.obj_t) {
+            .string => "string",
+            .function => "function",
+            .closure => "function",
+            .upvalue => "upvalue",
+            .class => "class",
+            else => "unkwonk",
+            //.instance => "instance",
+            //.bound_method => "method",
+        };
+    } else blk: {
+        break :blk "unknown";
+    };
+
+    return try Obj.String.copy(self, type_name);
+}
+
+inline fn readByte(vm: *VM) u8 {
     const byte = vm.frame.closure.func.chunk.code.items[vm.frame.ip];
     vm.frame.ip += 1;
     return byte;
 }
 
-fn readU16(vm: *VM) u16 {
+inline fn readU16(vm: *VM) u16 {
     const byte1: u16 = vm.frame.closure.func.chunk.code.items[vm.frame.ip];
     const byte2 = vm.frame.closure.func.chunk.code.items[vm.frame.ip + 1];
     vm.frame.ip += 2;
@@ -271,15 +397,15 @@ inline fn readString(vm: *VM) *Obj.String {
     return vm.readConstant().asObj().as(Obj.String);
 }
 
-fn readConstant(vm: *VM) Value {
+inline fn readConstant(vm: *VM) Value {
     return vm.frame.closure.func.chunk.constants.items[vm.readByte()];
 }
 
-pub fn push(vm: *VM, value: Value) void {
+pub inline fn push(vm: *VM, value: Value) void {
     vm.stack.append(value);
 }
 
-pub fn pop(vm: *VM) Value {
+pub inline fn pop(vm: *VM) Value {
     return vm.stack.pop();
 }
 
@@ -287,12 +413,7 @@ fn stackTop(vm: *VM) !usize {
     return vm.stack.items.len;
 }
 
-fn isFalsey(value: Value) bool {
-    //return switch (value) {
-    //.nil => true,
-    //.bool => |b| !b,
-    //else => false,
-    //};
+inline fn isFalsey(value: Value) bool {
     return value.isFalsey();
 }
 
@@ -306,13 +427,12 @@ fn concat(vm: *VM) !void {
 
 const BinaryOp = enum { add, sub, mul, div, gt, lt };
 
-fn binaryOp(vm: *VM, op: BinaryOp) !void {
+inline fn binaryOp(vm: *VM, op: BinaryOp) !void {
     const b = vm.peek(0);
     const a = vm.peek(1);
 
-    if (op == .add and a.isObj() and a.asObj().obj_t == .string and b.isObj() and b.asObj().obj_t == .string) {
-        try vm.concat();
-    } else if (a.isNumber() and b.isNumber()) {
+    // Fast path: both numbers (most common case in fib)
+    if (a.isNumber() and b.isNumber()) {
         const left = a.asNumber();
         const right = b.asNumber();
         _ = vm.pop();
@@ -328,17 +448,19 @@ fn binaryOp(vm: *VM, op: BinaryOp) !void {
         };
 
         vm.push(result);
+    } else if (op == .add and a.isObj() and a.asObj().obj_t == .string and b.isObj() and b.asObj().obj_t == .string) {
+        try vm.concat();
     } else {
         try vm.runtimeErr("Operands must be two numbers or strings [{f},  {f}]", .{ vm.peek(0), vm.peek(1) });
         return error.VmRuntimeError;
     }
 }
 
-fn peek(vm: *VM, distance: usize) Value {
+inline fn peek(vm: *VM, distance: usize) Value {
     return vm.stack.items[vm.stack.items.len - distance - 1];
 }
 
-fn call(vm: *VM, closure: *Obj.Closure, arg_count: usize) !void {
+pub fn call(vm: *VM, closure: *Obj.Closure, arg_count: usize) !void {
     if (arg_count != closure.func.arity) {
         return vm.runtimeErr("Expected {d} arguments but got: {d}", .{ closure.func.arity, arg_count });
     }

@@ -213,7 +213,7 @@ pub const GCAllocator = struct {
             .{ before - gca.bytes_allocated, before, gca.bytes_allocated, gca.next_gc },
         );
 
-        std.debug.print("-- gc end\n", .{});
+        if (comptime debug.log_gc) std.debug.print("-- gc end\n", .{});
     }
 };
 

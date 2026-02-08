@@ -1,0 +1,52 @@
+// Test 4: Typed Functions
+// This tests function type annotations with parameters and return types
+
+// Function with typed parameters and return type
+fun add(x: int, y: int) : int {
+    return x + y;
+}
+
+var result := add(10, 20);
+print result;  // Should print: 30
+
+// Function with float parameters
+fun multiply(a: float, b: float) : float {
+    return a * b;
+}
+
+var product := multiply(2.5, 4.0);
+print product;  // Should print: 10
+
+// Function with string parameter
+fun greet(name: string) : string {
+    return "Hello, " + name + "!";
+}
+
+var greeting := greet("Bob");
+print greeting;  // Should print: Hello, Bob!
+
+// Function with boolean logic
+fun isPositive(n: int) : bool {
+    return n > 0;
+}
+
+print isPositive(5);   // Should print: true
+print isPositive(-3);  // Should print: false
+
+// Function returning nil (void)
+fun printMessage(msg: string) : void {
+    print msg;
+}
+
+printMessage("This is a test");  // Should print: This is a test
+
+// Recursive function with types
+fun factorial(n: int) : int {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+print factorial(5);  // Should print: 120
+

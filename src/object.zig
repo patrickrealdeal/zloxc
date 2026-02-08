@@ -5,7 +5,7 @@ const Chunk = @import("chunk.zig");
 const hashFn = std.hash.Fnv1a_32.hash;
 const debug = @import("debug.zig");
 
-const Obj = @This();
+pub const Obj = @This();
 
 pub const ObjType = enum {
     string,
@@ -273,10 +273,6 @@ pub const Class = struct {
         class.name = name;
         return class;
     }
-
-    //pub fn mark(object: *String, vm: *VM) !void {
-    //try object.mark(vm);
-    //}
 
     fn destroy(object: *Class, vm: *VM) void {
         vm.allocator.destroy(object);
