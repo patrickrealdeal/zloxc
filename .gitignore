@@ -1,6 +1,7 @@
 zig-out
 .zig-cache
 loxtests
+newtests
 mainbackup.zig
 install.sh
 fib.rb
